@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
+import * as teensySizeModule from '@teensy-mem-explorer/analyzer/analysis/reports/teensy-size';
 import type {
     Analysis,
     RegionKind,
     RegionSummary,
+    RuntimeBankSummary,
+    RuntimeGroupSummary,
     TeensySizeReportSummary,
 } from '@teensy-mem-explorer/analyzer';
 import type {
@@ -59,7 +62,9 @@ type UsageBarData = {
     description?: string;
 };
 
-type TeensySizeCalculator = (analysis: Analysis) => TeensySizeReportSummary;
+const { calculateTeensySizeReport } = teensySizeModule as {
+    calculateTeensySizeReport: (analysis: Analysis) => TeensySizeReportSummary;
+};
 
 type TopLevelGroup = {
     id: string;
@@ -106,7 +111,8 @@ const App = (): JSX.Element => {
     const [isTriggeringRun, setIsTriggeringRun] = useState(false);
     const [runError, setRunError] = useState<string | null>(null);
     const [latestAnalysis, setLatestAnalysis] = useState<Analysis | null>(null);
-    const [teensySizeCalculator, setTeensySizeCalculator] = useState<TeensySizeCalculator | null>(null);
+    const [teensySizeReport, setTeensySizeReport] = useState<TeensySizeReportSummary | null>(null);
+    const [teensySizeError, setTeensySizeError] = useState<string | null>(null);
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
         const file = event.target.files?.[0];
@@ -228,33 +234,22 @@ const App = (): JSX.Element => {
     }, []);
 
     useEffect(() => {
-        let isMounted = true;
+        if (!latestAnalysis) {
+            setTeensySizeReport(null);
+            setTeensySizeError(null);
+            return;
+        }
 
-        const loadCalculator = async (): Promise<void> => {
-            try {
-                const module = await import('@teensy-mem-explorer/analyzer');
-                const exported = module as Partial<typeof import('@teensy-mem-explorer/analyzer')> & {
-                    default?: Partial<typeof import('@teensy-mem-explorer/analyzer')>;
-                };
-                const fn =
-                    (exported.calculateTeensySizeReport as TeensySizeCalculator | undefined) ??
-                    (exported.default?.calculateTeensySizeReport as TeensySizeCalculator | undefined);
-                if (isMounted && typeof fn === 'function') {
-                    setTeensySizeCalculator(() => fn);
-                }
-            } catch (error) {
-                if (isMounted) {
-                    console.warn('Failed to load teensy_size calculator', error);
-                }
-            }
-        };
-
-        void loadCalculator();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
+        try {
+            const report = calculateTeensySizeReport(latestAnalysis);
+            setTeensySizeReport(report);
+            setTeensySizeError(null);
+        } catch (error) {
+            console.warn('Failed to compute teensy_size report', error);
+            setTeensySizeReport(null);
+            setTeensySizeError(error instanceof Error ? error.message : 'Unknown calculator failure');
+        }
+    }, [latestAnalysis]);
 
     const statusLabel = useMemo(() => {
         if (!serverStatus) {
@@ -351,10 +346,10 @@ const App = (): JSX.Element => {
             return [];
         }
 
-        const runtimeGroups = latestAnalysis.summaries.runtimeGroups ?? [];
+        const runtimeGroups: RuntimeGroupSummary[] = latestAnalysis.summaries.runtimeGroups ?? [];
 
         if (runtimeGroups.length > 0) {
-            return runtimeGroups.map((group) => {
+            return runtimeGroups.map((group: RuntimeGroupSummary) => {
                 const total = group.capacityBytes;
                 const used = Math.max(total - group.freeBytes, 0);
                 return {
@@ -369,9 +364,10 @@ const App = (): JSX.Element => {
             });
         }
 
-        const regionSummaryMap = new Map<string, RegionSummary>(
-            latestAnalysis.summaries.byRegion.map((summary) => [summary.regionId, summary]),
+        const regionSummaryEntries: Array<[string, RegionSummary]> = latestAnalysis.summaries.byRegion.map(
+            (summary: RegionSummary) => [summary.regionId, summary],
         );
+        const regionSummaryMap = new Map<string, RegionSummary>(regionSummaryEntries);
 
         const groups: UsageBarData[] = [];
 
@@ -427,9 +423,9 @@ const App = (): JSX.Element => {
             return [];
         }
 
-        const runtimeBanks = latestAnalysis.summaries.runtimeBanks ?? [];
+        const runtimeBanks: RuntimeBankSummary[] = latestAnalysis.summaries.runtimeBanks ?? [];
         if (runtimeBanks.length > 0) {
-            return runtimeBanks.map((bank) => {
+            return runtimeBanks.map((bank: RuntimeBankSummary) => {
                 const total = bank.capacityBytes;
                 const used = Math.max(total - bank.freeBytes, 0);
                 const contributors = bank.contributors
@@ -456,9 +452,10 @@ const App = (): JSX.Element => {
             });
         }
 
-        const regionSummaryMap = new Map<string, RegionSummary>(
-            latestAnalysis.summaries.byRegion.map((summary) => [summary.regionId, summary]),
+        const regionSummaryEntries: Array<[string, RegionSummary]> = latestAnalysis.summaries.byRegion.map(
+            (summary: RegionSummary) => [summary.regionId, summary],
         );
+        const regionSummaryMap = new Map<string, RegionSummary>(regionSummaryEntries);
 
         return latestAnalysis.regions.map((region) => {
             const summary = regionSummaryMap.get(region.id);
@@ -499,18 +496,6 @@ const App = (): JSX.Element => {
             };
         });
     }, [latestAnalysis]);
-
-    const teensySizeReport = useMemo<TeensySizeReportSummary | null>(() => {
-        if (!latestAnalysis || !teensySizeCalculator) {
-            return null;
-        }
-        try {
-            return teensySizeCalculator(latestAnalysis);
-        } catch (error) {
-            console.warn('Failed to compute teensy-size report', error);
-            return null;
-        }
-    }, [latestAnalysis, teensySizeCalculator]);
 
     const teensySizePanels = useMemo(
         () => {
@@ -561,8 +546,6 @@ const App = (): JSX.Element => {
         },
         [teensySizeReport],
     );
-
-    const isTeensySizeCalculatorReady = Boolean(teensySizeCalculator);
     const hasTeensySizeReport = teensySizePanels.length > 0;
 
     const renderUsageBar = (summary: UsageBarData): JSX.Element => {
@@ -786,8 +769,8 @@ const App = (): JSX.Element => {
                         <h2>Teensy-size Compatibility</h2>
                         <div className="summary-meta">
                             {latestAnalysis ? (
-                                !isTeensySizeCalculatorReady ? (
-                                    <span className="summary-updated">Loading calculator…</span>
+                                teensySizeError ? (
+                                    <span className="summary-updated">Calculation error</span>
                                 ) : hasTeensySizeReport ? (
                                     <span className="summary-updated">Config-driven teensy_size buckets</span>
                                 ) : (
@@ -800,8 +783,8 @@ const App = (): JSX.Element => {
                     </div>
                     {!latestAnalysis ? (
                         <p className="summary-placeholder">Run an analysis to compute teensy_size metrics.</p>
-                    ) : !isTeensySizeCalculatorReady ? (
-                        <p className="summary-placeholder">Loading teensy_size metrics…</p>
+                    ) : teensySizeError ? (
+                        <p className="summary-placeholder">Failed to compute teensy_size metrics: {teensySizeError}</p>
                     ) : hasTeensySizeReport ? (
                         <div className="usage-grid teensy-size-grid">
                             {teensySizePanels.map((panel) => (

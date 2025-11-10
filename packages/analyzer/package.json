@@ -1,0 +1,24 @@
+{
+    "name": "@teensy-mem-explorer/analyzer",
+    "version": "0.1.0",
+    "description": "Static analysis core for Teensy memory usage.",
+    "license": "MIT",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "require": "./dist/index.js",
+            "import": "./dist/index.mjs",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsc -b",
+        "clean": "rimraf dist",
+        "lint": "eslint \"src/**/*.{ts,tsx}\""
+    },
+    "dependencies": {},
+    "devDependencies": {
+        "rimraf": "^5.0.5"
+    }
+}

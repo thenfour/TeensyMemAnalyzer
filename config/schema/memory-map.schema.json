@@ -1,0 +1,80 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Memory Map Config",
+    "type": "object",
+    "required": [
+        "targetId",
+        "regions"
+    ],
+    "properties": {
+        "targetId": {
+            "type": "string"
+        },
+        "regions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "kind",
+                    "start",
+                    "size"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "flash",
+                            "code_ram",
+                            "data_ram",
+                            "dma_ram",
+                            "ext_ram",
+                            "other"
+                        ]
+                    },
+                    "start": {
+                        "type": "number",
+                        "minimum": 0
+                    },
+                    "size": {
+                        "type": "number",
+                        "minimum": 0
+                    },
+                    "reserved": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "name",
+                                "start",
+                                "size"
+                            ],
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                },
+                                "start": {
+                                    "type": "number",
+                                    "minimum": 0
+                                },
+                                "size": {
+                                    "type": "number",
+                                    "minimum": 0
+                                }
+                            }
+                        }
+                    }
+                },
+                "additionalProperties": false
+            }
+        }
+    },
+    "additionalProperties": false
+}

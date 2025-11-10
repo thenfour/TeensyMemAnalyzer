@@ -1,0 +1,13 @@
+{
+    "$schema": "./schema/memory-map.schema.json",
+    "targetId": "teensy41",
+    "regions": [
+        {
+            "id": "FLASH",
+            "name": "QSPI Flash",
+            "kind": "flash",
+            "start": 134217728,
+            "size": 8388608
+        }
+    ]
+}

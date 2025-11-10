@@ -428,7 +428,7 @@ This is a suggested high-level structure. The coding agent should implement with
 
 1. Developer builds firmware (e.g. via PlatformIO/Teensy).
 2. Developer runs CLI:
-  - `yarn workspace @teensy-mem-explorer/cli teensy-mem-explorer --target teensy41 --elf path/to/firmware.elf`
+  - `yarn workspace @teensy-mem-explorer/cli run teensy-mem-explorer -- --target teensy41 --elf path/to/firmware.elf`
   - Add `--map path/to/firmware.map` for optional map file context.
   - Provide `--toolchain-dir` if `arm-none-eabi-*` tools are not on `PATH`.
   - Append `--json` to emit the full analysis model as JSON.

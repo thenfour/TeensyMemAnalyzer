@@ -11,7 +11,9 @@ import { resolveToolchain } from '../toolchain/resolver';
 import { runCommand } from '../utils/exec';
 import { parseReadelfSections } from '../parsers/readelf';
 import { parseObjdumpSectionHeaders } from '../parsers/objdump';
+import { parseNmOutput } from '../parsers/nm';
 import { assignRegionsToSections } from './region-assignment';
+import { assignSymbolsToSections } from './symbol-assignment';
 import { calculateSummaries } from './summaries';
 
 const deriveTargetName = (targetId: string): string => {
@@ -79,10 +81,27 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
   const regionAssignment = assignRegionsToSections(analysis.regions, sections);
   analysis.sections = regionAssignment.sections;
 
-  if (regionAssignment.warnings.length > 0) {
+  const nmResult = await runCommand(toolchain.nm, [
+    '--print-size',
+    '--size-sort',
+    '--numeric-sort',
+    '--demangle',
+    analysis.build.elfPath,
+  ]);
+  if (nmResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to read symbols from ELF.\nCommand: ${toolchain.nm} --print-size --size-sort --numeric-sort --demangle ${analysis.build.elfPath}\n${nmResult.stderr.trim()}`,
+    );
+  }
+
+  const nmSymbols = parseNmOutput(nmResult.stdout);
+  const symbolAssignment = assignSymbolsToSections(nmSymbols, analysis.sections);
+  analysis.symbols = symbolAssignment.symbols;
+
+  const warnings = [...regionAssignment.warnings, ...symbolAssignment.warnings];
+  if (warnings.length > 0) {
     // TODO: surface warnings in analysis metadata once available.
-    // Currently, we simply log them for visibility.
-    regionAssignment.warnings.forEach((warning) => {
+    warnings.forEach((warning) => {
       // eslint-disable-next-line no-console
       console.warn(warning);
     });

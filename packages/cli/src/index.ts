@@ -5,6 +5,7 @@ import {
   analyzeBuild,
   AnalyzeBuildParams,
   Analysis,
+  Symbol as AnalysisSymbol,
   Region,
   RegionSummary,
   Section,
@@ -157,6 +158,31 @@ const computeReservedUnusedBytes = (region: Region | undefined, sections: Sectio
   return unused;
 };
 
+const computeTopSymbolsByRegion = (symbols: AnalysisSymbol[], limit: number): Map<string, AnalysisSymbol[]> => {
+  const grouped = new Map<string, AnalysisSymbol[]>();
+
+  symbols.forEach((symbol) => {
+    if (!symbol.regionId || symbol.size <= 0) {
+      return;
+    }
+
+    const list = grouped.get(symbol.regionId);
+    if (list) {
+      list.push(symbol);
+    } else {
+      grouped.set(symbol.regionId, [symbol]);
+    }
+  });
+
+  const result = new Map<string, AnalysisSymbol[]>();
+  grouped.forEach((list, regionId) => {
+    const sorted = [...list].sort((a, b) => b.size - a.size || a.name.localeCompare(b.name));
+    result.set(regionId, sorted.slice(0, limit));
+  });
+
+  return result;
+};
+
 interface TeensySizeFlashSummary {
   code: number;
   data: number;
@@ -279,7 +305,11 @@ const computeTeensySizeSummary = (analysis: Analysis): TeensySizeSummary => {
   return summaries;
 };
 
-const printRegionSummary = (regionSummary: RegionSummary, analysis: Analysis): void => {
+const printRegionSummary = (
+  regionSummary: RegionSummary,
+  analysis: Analysis,
+  topSymbols: AnalysisSymbol[],
+): void => {
   const region = analysis.regions.find((entry) => entry.id === regionSummary.regionId);
   if (!region) {
     return;
@@ -304,6 +334,16 @@ const printRegionSummary = (regionSummary: RegionSummary, analysis: Analysis): v
     if (regionSummary.largestGapBytes > 0) {
       console.log(`    Largest gap    ${formatBytes(regionSummary.largestGapBytes)}`);
     }
+  }
+
+  if (topSymbols.length > 0) {
+    console.log('  Worst offenders:');
+    topSymbols.forEach((symbol, index) => {
+      const rankLabel = `${index + 1}.`;
+      console.log(
+        `    ${rankLabel.padEnd(4)}${formatBytes(symbol.size).padStart(10)}  ${symbol.name}`,
+      );
+    });
   }
 };
 
@@ -358,8 +398,11 @@ const printAnalysis = (analysis: Analysis): void => {
     }
   }
 
+  const topSymbolsByRegion = computeTopSymbolsByRegion(analysis.symbols, 3);
+
   analysis.summaries.byRegion.forEach((regionSummary) => {
-    printRegionSummary(regionSummary, analysis);
+    const offenders = topSymbolsByRegion.get(regionSummary.regionId) ?? [];
+    printRegionSummary(regionSummary, analysis, offenders);
   });
 
   console.log('\nTop symbols (region id) by size:');

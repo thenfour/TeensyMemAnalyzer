@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Analysis, RegionKind, RegionSummary } from '@teensy-mem-explorer/analyzer';
+import type {
+    Analysis,
+    RegionKind,
+    RegionSummary,
+    TeensySizeReportSummary,
+} from '@teensy-mem-explorer/analyzer';
 import type {
     HealthResponse,
     ServerConfig,
@@ -54,42 +59,13 @@ type UsageBarData = {
     description?: string;
 };
 
+type TeensySizeCalculator = (analysis: Analysis) => TeensySizeReportSummary;
+
 type TopLevelGroup = {
     id: string;
     label: string;
     description: string;
     kinds: RegionKind[];
-};
-
-type RuntimeGroupSummaryLike = {
-    groupId: string;
-    name: string;
-    description?: string;
-    capacityBytes: number;
-    usedStaticBytes: number;
-    reservedBytes: number;
-    freeBytes: number;
-    bankIds: string[];
-};
-
-type RuntimeBankContributorSummaryLike = {
-    regionId: string;
-    regionName: string;
-    sizeBytes: number;
-    usedStaticBytes: number;
-    reservedBytes: number;
-};
-
-type RuntimeBankSummaryLike = {
-    bankId: string;
-    name: string;
-    kind: string;
-    description?: string;
-    capacityBytes: number;
-    usedStaticBytes: number;
-    reservedBytes: number;
-    freeBytes: number;
-    contributors: RuntimeBankContributorSummaryLike[];
 };
 
 const TOP_LEVEL_GROUPS: TopLevelGroup[] = [
@@ -130,6 +106,7 @@ const App = (): JSX.Element => {
     const [isTriggeringRun, setIsTriggeringRun] = useState(false);
     const [runError, setRunError] = useState<string | null>(null);
     const [latestAnalysis, setLatestAnalysis] = useState<Analysis | null>(null);
+    const [teensySizeCalculator, setTeensySizeCalculator] = useState<TeensySizeCalculator | null>(null);
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
         const file = event.target.files?.[0];
@@ -250,6 +227,35 @@ const App = (): JSX.Element => {
         };
     }, []);
 
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadCalculator = async (): Promise<void> => {
+            try {
+                const module = await import('@teensy-mem-explorer/analyzer');
+                const exported = module as Partial<typeof import('@teensy-mem-explorer/analyzer')> & {
+                    default?: Partial<typeof import('@teensy-mem-explorer/analyzer')>;
+                };
+                const fn =
+                    (exported.calculateTeensySizeReport as TeensySizeCalculator | undefined) ??
+                    (exported.default?.calculateTeensySizeReport as TeensySizeCalculator | undefined);
+                if (isMounted && typeof fn === 'function') {
+                    setTeensySizeCalculator(() => fn);
+                }
+            } catch (error) {
+                if (isMounted) {
+                    console.warn('Failed to load teensy_size calculator', error);
+                }
+            }
+        };
+
+        void loadCalculator();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
     const statusLabel = useMemo(() => {
         if (!serverStatus) {
             return 'unknown';
@@ -345,13 +351,10 @@ const App = (): JSX.Element => {
             return [];
         }
 
-        const runtimeGroups =
-            (latestAnalysis.summaries as unknown as {
-                runtimeGroups?: RuntimeGroupSummaryLike[];
-            }).runtimeGroups ?? [];
+        const runtimeGroups = latestAnalysis.summaries.runtimeGroups ?? [];
 
         if (runtimeGroups.length > 0) {
-            return runtimeGroups.map((group: RuntimeGroupSummaryLike) => {
+            return runtimeGroups.map((group) => {
                 const total = group.capacityBytes;
                 const used = Math.max(total - group.freeBytes, 0);
                 return {
@@ -424,16 +427,13 @@ const App = (): JSX.Element => {
             return [];
         }
 
-        const runtimeBanks =
-            (latestAnalysis.summaries as unknown as {
-                runtimeBanks?: RuntimeBankSummaryLike[];
-            }).runtimeBanks ?? [];
+        const runtimeBanks = latestAnalysis.summaries.runtimeBanks ?? [];
         if (runtimeBanks.length > 0) {
-            return runtimeBanks.map((bank: RuntimeBankSummaryLike) => {
+            return runtimeBanks.map((bank) => {
                 const total = bank.capacityBytes;
                 const used = Math.max(total - bank.freeBytes, 0);
                 const contributors = bank.contributors
-                    .map((contributor: RuntimeBankContributorSummaryLike) => `${contributor.regionName} (${formatBytes(contributor.sizeBytes)})`)
+                    .map((contributor) => `${contributor.regionName} (${formatBytes(contributor.sizeBytes)})`)
                     .join(', ');
 
                 const descriptionParts: string[] = [];
@@ -499,6 +499,71 @@ const App = (): JSX.Element => {
             };
         });
     }, [latestAnalysis]);
+
+    const teensySizeReport = useMemo<TeensySizeReportSummary | null>(() => {
+        if (!latestAnalysis || !teensySizeCalculator) {
+            return null;
+        }
+        try {
+            return teensySizeCalculator(latestAnalysis);
+        } catch (error) {
+            console.warn('Failed to compute teensy-size report', error);
+            return null;
+        }
+    }, [latestAnalysis, teensySizeCalculator]);
+
+    const teensySizePanels = useMemo(
+        () => {
+            if (!teensySizeReport) {
+                return [] as { title: string; rows: { label: string; value: string }[] }[];
+            }
+
+            const panels: { title: string; rows: { label: string; value: string }[] }[] = [];
+
+            if (teensySizeReport.flash) {
+                const { code, data, headers, freeForFiles } = teensySizeReport.flash;
+                panels.push({
+                    title: 'FLASH',
+                    rows: [
+                        { label: 'Code', value: formatBytes(code) },
+                        { label: 'Data', value: formatBytes(data) },
+                        { label: 'Headers', value: formatBytes(headers) },
+                        { label: 'Free for files', value: formatBytes(freeForFiles) },
+                    ],
+                });
+            }
+
+            if (teensySizeReport.ram1) {
+                const { code, variables, padding, freeForLocalVariables } = teensySizeReport.ram1;
+                panels.push({
+                    title: 'RAM1',
+                    rows: [
+                        { label: 'Code (ITCM)', value: formatBytes(code) },
+                        { label: 'Variables (DTCM)', value: formatBytes(variables) },
+                        { label: 'Padding', value: formatBytes(padding) },
+                        { label: 'Free for local variables', value: formatBytes(freeForLocalVariables) },
+                    ],
+                });
+            }
+
+            if (teensySizeReport.ram2) {
+                const { variables, freeForMalloc } = teensySizeReport.ram2;
+                panels.push({
+                    title: 'RAM2',
+                    rows: [
+                        { label: 'Variables', value: formatBytes(variables) },
+                        { label: 'Free for malloc/new', value: formatBytes(freeForMalloc) },
+                    ],
+                });
+            }
+
+            return panels;
+        },
+        [teensySizeReport],
+    );
+
+    const isTeensySizeCalculatorReady = Boolean(teensySizeCalculator);
+    const hasTeensySizeReport = teensySizePanels.length > 0;
 
     const renderUsageBar = (summary: UsageBarData): JSX.Element => {
         const percent = summary.percent ?? computeUsagePercent(summary.used, summary.total);
@@ -713,6 +778,48 @@ const App = (): JSX.Element => {
                         </div>
                     ) : (
                         <p className="summary-placeholder">Run an analysis to populate memory usage.</p>
+                    )}
+                </section>
+
+                <section className="summary-card">
+                    <div className="summary-header">
+                        <h2>Teensy-size Compatibility</h2>
+                        <div className="summary-meta">
+                            {latestAnalysis ? (
+                                !isTeensySizeCalculatorReady ? (
+                                    <span className="summary-updated">Loading calculator…</span>
+                                ) : hasTeensySizeReport ? (
+                                    <span className="summary-updated">Config-driven teensy_size buckets</span>
+                                ) : (
+                                    <span className="summary-updated">No mapping for this target</span>
+                                )
+                            ) : (
+                                <span className="summary-updated">Awaiting first analysis</span>
+                            )}
+                        </div>
+                    </div>
+                    {!latestAnalysis ? (
+                        <p className="summary-placeholder">Run an analysis to compute teensy_size metrics.</p>
+                    ) : !isTeensySizeCalculatorReady ? (
+                        <p className="summary-placeholder">Loading teensy_size metrics…</p>
+                    ) : hasTeensySizeReport ? (
+                        <div className="usage-grid teensy-size-grid">
+                            {teensySizePanels.map((panel) => (
+                                <div className="teensy-size-card" key={panel.title}>
+                                    <h3>{panel.title}</h3>
+                                    <dl>
+                                        {panel.rows.map((row) => (
+                                            <div key={row.label}>
+                                                <dt>{row.label}</dt>
+                                                <dd>{row.value}</dd>
+                                            </div>
+                                        ))}
+                                    </dl>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="summary-placeholder">Target configuration does not define teensy_size report mappings.</p>
                     )}
                 </section>
 

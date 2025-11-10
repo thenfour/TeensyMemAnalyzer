@@ -80,6 +80,31 @@ export interface ReportsConfig {
   teensySize?: TeensySizeReportConfig;
 }
 
+export interface TeensySizeFlashSummary {
+  code: number;
+  data: number;
+  headers: number;
+  freeForFiles: number;
+}
+
+export interface TeensySizeRam1Summary {
+  code: number;
+  variables: number;
+  padding: number;
+  freeForLocalVariables: number;
+}
+
+export interface TeensySizeRam2Summary {
+  variables: number;
+  freeForMalloc: number;
+}
+
+export interface TeensySizeReportSummary {
+  flash?: TeensySizeFlashSummary;
+  ram1?: TeensySizeRam1Summary;
+  ram2?: TeensySizeRam2Summary;
+}
+
 export type SectionCategory =
   | 'code'
   | 'code_fast'

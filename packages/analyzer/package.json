@@ -10,6 +10,11 @@
             "require": "./dist/index.js",
             "import": "./dist/index.js",
             "types": "./dist/index.d.ts"
+        },
+        "./analysis/reports/teensy-size": {
+            "require": "./dist/analysis/reports/teensy-size.js",
+            "import": "./dist/analysis/reports/teensy-size.js",
+            "types": "./dist/analysis/reports/teensy-size.d.ts"
         }
     },
     "scripts": {

@@ -95,4 +95,7 @@ The analyzer keeps the core platform-neutral; Teensy specifics live in config fi
 
 cls && yarn run build && yarn workspace @teensy-mem-explorer/viewer dev
 
+cls && yarn run build && yarn workspace @teensy-mem-explorer/cli teensy-mem-explorer --target teensy40 --elf "C:\root\git\thenfour\TeensyMemAnalyzer\example\firmware.elf" --map "C:\root\git\thenfour\TeensyMemAnalyzer\example\firmware.map" --toolchain-dir "C:\Users\carl\.platformio\packages\toolchain-gccarmnoneeabi-teensy\bin"
+
+
 ```

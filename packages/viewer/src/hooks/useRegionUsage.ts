@@ -5,6 +5,7 @@ import type {
     RegionKind,
     RegionSummary,
     RuntimeBankSummary,
+    RuntimeGroupSummary,
     Section,
     Symbol,
 } from '@teensy-mem-explorer/analyzer';
@@ -68,6 +69,61 @@ const collectRangesFromSections = (rangeByRegion: RangeMap, sections: Section[])
 const collectRangesFromSymbols = (rangeByRegion: RangeMap, symbols: Symbol[]): void => {
     symbols.forEach((symbol) => {
         updateRange(rangeByRegion, symbol.regionId, symbol.addr, symbol.size);
+    });
+};
+
+const buildRuntimeGroupUsage = (
+    groups: RuntimeGroupSummary[],
+    banks: RuntimeBankSummary[],
+    includeRuntimeBanks: boolean,
+    formatValue: (value: number | undefined) => string,
+    sharedCapacityOverrides: Map<string, number>,
+): UsageBarData[] => {
+    if (!includeRuntimeBanks || groups.length === 0) {
+        return [];
+    }
+
+    const bankMap = new Map<string, RuntimeBankSummary>();
+    banks.forEach((bank) => bankMap.set(bank.bankId, bank));
+
+    return groups.map((group) => {
+        const overriddenCapacity = sharedCapacityOverrides.get(group.groupId);
+        const rawCapacity = group.capacityBytes;
+        const capacity = overriddenCapacity ?? rawCapacity;
+        const totalUsed = Math.max(group.usedStaticBytes + group.reservedBytes, 0);
+        const used = Math.min(totalUsed, capacity);
+        const free = Math.max(capacity - totalUsed, 0);
+        const descriptionParts: string[] = [];
+
+        if (group.description) {
+            descriptionParts.push(group.description);
+        }
+
+        const bankNames = group.bankIds
+            .map((bankId) => bankMap.get(bankId)?.name ?? bankId)
+            .filter((name, index, array) => name && array.indexOf(name) === index);
+
+        if (bankNames.length > 0) {
+            descriptionParts.push(`Banks: ${bankNames.join(', ')}`);
+        }
+
+        if (group.reservedBytes > 0) {
+            descriptionParts.push(`Reserved ${formatValue(group.reservedBytes)}`);
+        }
+
+        if (overriddenCapacity !== undefined && overriddenCapacity !== rawCapacity) {
+            descriptionParts.push(`Shared capacity ${formatValue(overriddenCapacity)}`);
+        }
+
+        return {
+            id: group.groupId,
+            label: group.name,
+            total: capacity,
+            used,
+            free,
+            percent: computeUsagePercent(used, capacity),
+            description: descriptionParts.join(' • '),
+        } satisfies UsageBarData;
     });
 };
 
@@ -188,11 +244,28 @@ export const useRegionUsage = ({ analysis, formatValue, includeRuntimeBanks = tr
             return { runtimeBanks: [], regions: [] };
         }
 
-        const runtimeBanks = buildRuntimeBankUsage(
+        const sharedCapacityOverrides = new Map<string, number>();
+        const teensySizeConfig = analysis.reporting?.teensySize;
+        if (teensySizeConfig?.ram1?.groupId && teensySizeConfig.ram1.sharedCapacityBytes !== undefined) {
+            sharedCapacityOverrides.set(teensySizeConfig.ram1.groupId, teensySizeConfig.ram1.sharedCapacityBytes);
+        }
+
+        const runtimeGroupUsage = buildRuntimeGroupUsage(
+            analysis.summaries.runtimeGroups ?? [],
             analysis.summaries.runtimeBanks ?? [],
             includeRuntimeBanks,
             formatValue,
+            sharedCapacityOverrides,
         );
+
+        const runtimeBanks =
+            runtimeGroupUsage.length > 0
+                ? runtimeGroupUsage
+                : buildRuntimeBankUsage(
+                      analysis.summaries.runtimeBanks ?? [],
+                      includeRuntimeBanks,
+                      formatValue,
+                  );
 
         const byRegionSummaries = analysis.summaries.byRegion ?? [];
         const regionSummaryEntries: Array<[string, RegionSummary]> = byRegionSummaries.map(

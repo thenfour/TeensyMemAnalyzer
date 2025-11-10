@@ -105,6 +105,8 @@ export interface RegionSummary {
   usedByCategory: Partial<Record<SectionCategory, number>>;
   reserved: number;
   freeForDynamic: number;
+  paddingBytes: number;
+  largestGapBytes: number;
 }
 
 export interface CategorySummary {
@@ -112,10 +114,16 @@ export interface CategorySummary {
   bytes: number;
 }
 
+export interface FileOnlySummary {
+  totalBytes: number;
+  byCategory: CategorySummary[];
+}
+
 export interface Summaries {
   totals: TotalsSummary;
   byRegion: RegionSummary[];
   byCategory: CategorySummary[];
+  fileOnly: FileOnlySummary;
 }
 
 export interface Analysis {
@@ -160,6 +168,10 @@ export const createEmptyAnalysis = (): Analysis => ({
     },
     byRegion: [],
     byCategory: [],
+    fileOnly: {
+      totalBytes: 0,
+      byCategory: [],
+    },
   },
 });
 

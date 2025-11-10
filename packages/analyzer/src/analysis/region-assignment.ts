@@ -22,6 +22,15 @@ export const assignRegionsToSections = (regions: Region[], sections: Section[]):
       return section;
     }
 
+    if (!section.flags.alloc) {
+      return {
+        ...section,
+        execRegionId: undefined,
+        loadRegionId: undefined,
+        isCopySection: false,
+      };
+    }
+
     const execRegion = findRegionForAddress(regions, section.vmaStart);
     if (!execRegion) {
       warnings.push(`Section ${section.name} at 0x${section.vmaStart.toString(16)} does not map to any region.`);

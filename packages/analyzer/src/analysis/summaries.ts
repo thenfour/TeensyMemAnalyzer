@@ -5,6 +5,7 @@ import {
   Summaries,
   TotalsSummary,
   RegionSummary,
+  FileOnlySummary,
 } from '../model';
 
 const zeroTotals = (): TotalsSummary => ({
@@ -92,6 +93,8 @@ const sumReservedBytes = (region: Region): number =>
 export const calculateSummaries = (regions: Region[], sections: Section[]): Summaries => {
   const totals = zeroTotals();
   const globalCategoryTotals = createCategoryAccumulator();
+  const fileOnlyCategoryTotals = createCategoryAccumulator();
+  let fileOnlyBytes = 0;
 
   const byRegion: RegionSummary[] = regions.map((region) => ({
     regionId: region.id,
@@ -100,6 +103,8 @@ export const calculateSummaries = (regions: Region[], sections: Section[]): Summ
     usedStatic: 0,
     usedByCategory: createCategoryAccumulator(),
     freeForDynamic: 0,
+    paddingBytes: 0,
+    largestGapBytes: 0,
   }));
 
   const regionMap = new Map<string, Region>();
@@ -108,8 +113,26 @@ export const calculateSummaries = (regions: Region[], sections: Section[]): Summ
   const regionSummaryMap = new Map<string, RegionSummary>();
   byRegion.forEach((summary) => regionSummaryMap.set(summary.regionId, summary));
 
+  const regionExtents = new Map<string, { start: number; size: number }[]>();
+
+  const recordExtent = (regionId: string | undefined, start: number | undefined, size: number): void => {
+    if (!regionId || start === undefined || size === 0) {
+      return;
+    }
+
+    if (!regionExtents.has(regionId)) {
+      regionExtents.set(regionId, []);
+    }
+
+    regionExtents.get(regionId)!.push({ start, size });
+  };
+
   sections.forEach((section) => {
-    if (section.size === 0) {
+    if (section.size === 0 || !section.flags.alloc) {
+      if (section.size > 0 && !section.flags.alloc) {
+        addToCategoryMap(fileOnlyCategoryTotals, section.category, section.size);
+        fileOnlyBytes += section.size;
+      }
       return;
     }
 
@@ -121,6 +144,7 @@ export const calculateSummaries = (regions: Region[], sections: Section[]): Summ
       addToCategoryMap(execSummary.usedByCategory, section.category, section.size);
       accumulateTotals(totals, execRegion.kind, section.category, section.size);
       addToCategoryMap(globalCategoryTotals, section.category, section.size);
+      recordExtent(section.execRegionId, section.vmaStart, section.size);
     }
 
     const shouldApplyLoadContribution = Boolean(
@@ -139,6 +163,8 @@ export const calculateSummaries = (regions: Region[], sections: Section[]): Summ
           totals.flashUsed += section.size;
           totals.flashInitImages += section.size;
         }
+
+        recordExtent(section.loadRegionId, section.lmaStart ?? section.vmaStart, section.size);
       }
     }
   });
@@ -147,6 +173,43 @@ export const calculateSummaries = (regions: Region[], sections: Section[]): Summ
     const reserved = summary.reserved;
     const free = summary.size - summary.usedStatic - reserved;
     summary.freeForDynamic = free > 0 ? free : 0;
+
+    const extents = regionExtents.get(summary.regionId) ?? [];
+    if (extents.length === 0) {
+      summary.paddingBytes = 0;
+      summary.largestGapBytes = 0;
+      return;
+    }
+
+    const sorted = extents.slice().sort((a, b) => a.start - b.start);
+    let totalSize = 0;
+    let largestGap = 0;
+    let currentStart = sorted[0].start;
+    let currentEnd = currentStart + sorted[0].size;
+    totalSize += sorted[0].size;
+
+    for (let i = 1; i < sorted.length; i += 1) {
+      const { start, size } = sorted[i];
+      const end = start + size;
+      totalSize += size;
+
+      if (start > currentEnd) {
+        const gap = start - currentEnd;
+        if (gap > largestGap) {
+          largestGap = gap;
+        }
+        currentEnd = end;
+      } else {
+        if (end > currentEnd) {
+          currentEnd = end;
+        }
+      }
+    }
+
+    const span = currentEnd - currentStart;
+    const padding = span > totalSize ? span - totalSize : 0;
+    summary.paddingBytes = padding;
+    summary.largestGapBytes = largestGap;
   });
 
   const byCategory = Object.entries(globalCategoryTotals).map(([category, bytes]) => ({
@@ -154,9 +217,20 @@ export const calculateSummaries = (regions: Region[], sections: Section[]): Summ
     bytes: bytes ?? 0,
   }));
 
+  const fileOnlyByCategory = Object.entries(fileOnlyCategoryTotals).map(([category, bytes]) => ({
+    category: category as SectionCategory,
+    bytes: bytes ?? 0,
+  }));
+
+  const fileOnly: FileOnlySummary = {
+    totalBytes: fileOnlyBytes,
+    byCategory: fileOnlyByCategory,
+  };
+
   return {
     totals,
     byRegion,
     byCategory,
+    fileOnly,
   };
 };

@@ -447,3 +447,28 @@ The implementation agent should:
 - Defer advanced features (diffing, padding analysis, runtime overlay) until the core is solid.
 
 ---
+
+## Comparing with `teensy_size`
+
+The example firmware under `example/firmware.elf` is the same binary referenced in the
+`teensy_size` output copied into `example/readme.txt`. Running the CLI after building
+(`node packages/cli/dist/index.js --target teensy41 --elf example/firmware.elf --map example/firmware.map --toolchain-dir "C:\\Program Files (x86)\\Arm GNU Toolchain arm-none-eabi\\14.2 rel1\\bin" --json`)
+produces totals that line up with the toolchain report once you map the categories:
+
+- Flash totals match: `flashUsed` (475,136 B) equals `teensy_size`'s
+  `code + data + headers` (390,840 + 75,120 + 9,172). The apparent mismatch in the
+  "code" bucket is because the analyzer records FASTRUN blocks twice—runtime bytes in
+  ITCM (`ramCode`) and their copy stored in flash as `flashInitImages`, while
+  `teensy_size` folds those bytes into its `FLASH code` column.
+- RAM1 differences are representational. `teensy_size` merges the ITCM and DTCM halves of
+  the tightly-coupled memory and labels the unused 6,984 B as "padding". The analyzer keeps
+  them as separate regions: ITCM reports zero padding because the executable sections are
+  tightly packed, and the same 6,984 B simply shows up as `freeForDynamic` inside ITCM.
+  DTCM retains the 49,088 B of variables that `teensy_size` attributes to RAM1.
+- Non-ALLOC sections (debug info, object file metadata) never consume runtime memory but do
+  appear in tooling. These bytes now surface under `summaries.fileOnly` so they stay visible
+  without polluting the region totals that feed free-space estimates.
+
+If a future firmware produces a real gap inside a region (for example alignment padding between
+ALLOC sections), `paddingBytes` and `largestGapBytes` in each `RegionSummary` will become non-zero
+and the CLI will print them under "Alignment padding" for that region.

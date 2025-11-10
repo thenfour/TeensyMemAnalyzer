@@ -100,6 +100,14 @@ const printRegionSummary = (regionSummary: RegionSummary, analysis: Analysis): v
     .forEach(([category, value]) => {
       console.log(`    ${category.padEnd(12)} ${formatBytes(value ?? 0)}`);
     });
+
+  if (regionSummary.paddingBytes > 0 || regionSummary.largestGapBytes > 0) {
+    console.log('  Alignment padding:');
+    console.log(`    Total          ${formatBytes(regionSummary.paddingBytes)}`);
+    if (regionSummary.largestGapBytes > 0) {
+      console.log(`    Largest gap    ${formatBytes(regionSummary.largestGapBytes)}`);
+    }
+  }
 };
 
 const printAnalysis = (analysis: Analysis): void => {
@@ -119,6 +127,10 @@ const printAnalysis = (analysis: Analysis): void => {
   console.log(`    - Data init:       ${formatBytes(analysis.summaries.totals.ramDataInit)}`);
   console.log(`    - BSS:             ${formatBytes(analysis.summaries.totals.ramBss)}`);
   console.log(`    - DMA:             ${formatBytes(analysis.summaries.totals.ramDma)}`);
+
+  if (analysis.summaries.fileOnly.totalBytes > 0) {
+    console.log(`  File-only (non-alloc): ${formatBytes(analysis.summaries.fileOnly.totalBytes)}`);
+  }
 
   analysis.summaries.byRegion.forEach((regionSummary) => {
     printRegionSummary(regionSummary, analysis);

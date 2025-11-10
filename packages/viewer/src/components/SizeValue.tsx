@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type PropsWithChildren } from 'react';
+import Tooltip from './Tooltip';
 
 export type SizeDisplayFormat = 'pretty' | 'bytes' | 'kilobytes' | 'hex';
 
@@ -92,19 +93,36 @@ export const SizeValue = ({ value, className }: SizeValueProps): JSX.Element => 
     }
 
     const display = formatValue(value, format);
-    const tooltip = [
-        `Pretty: ${formatValue(value, 'pretty')}`,
-        `Bytes: ${formatValue(value, 'bytes')}`,
-        `KiB: ${formatValue(value, 'kilobytes')}`,
-        `Hex: ${formatValue(value, 'hex')}`,
-        'Click to change size display format',
-    ].join('\n');
+    const tooltip = <div className="address-tooltip">
+        <div className="address-tooltip-row">
+            <span className="address-tooltip-label">Pretty</span>
+            <span>{formatValue(value, 'pretty')}</span>
+        </div>
+        <div className="address-tooltip-row">
+            <span className="address-tooltip-label">Bytes</span>
+            <span>{formatValue(value, 'bytes')}</span>
+        </div>
+        <div className="address-tooltip-row">
+            <span className="address-tooltip-label">KiB</span>
+            <span>{formatValue(value, 'kilobytes')}</span>
+        </div>
+        <div className="address-tooltip-row">
+            <span className="address-tooltip-label">Hex</span>
+            <span>{formatValue(value, 'hex')}</span>
+        </div>
+        <div className="address-tooltip-row">
+            <span className="address-tooltip-label">Note</span>
+            <span>Click to change size display format</span>
+        </div>
+    </div>;
 
     const combinedClassName = className ? `${className} size-value` : 'size-value';
 
     return (
-        <button type="button" className={combinedClassName} title={tooltip} onClick={cycleFormat}>
-            {display}
-        </button>
+        <Tooltip content={tooltip}>
+            <button type="button" className={combinedClassName} onClick={cycleFormat}>
+                {display}
+            </button>
+        </Tooltip>
     );
 };

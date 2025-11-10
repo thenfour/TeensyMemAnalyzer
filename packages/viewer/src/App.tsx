@@ -1,13 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as teensySizeModule from '@teensy-mem-explorer/analyzer/analysis/reports/teensy-size';
-import type {
-    Analysis,
-    RegionKind,
-    RegionSummary,
-    RuntimeBankSummary,
-    RuntimeGroupSummary,
-    TeensySizeReportSummary,
-} from '@teensy-mem-explorer/analyzer';
+import type { Analysis, TeensySizeReportSummary } from '@teensy-mem-explorer/analyzer';
 import type {
     HealthResponse,
     ServerConfig,
@@ -15,29 +8,12 @@ import type {
     ServerStatusPayload,
 } from './shared/protocol';
 import { SizeValue, useSizeFormat } from './components/SizeValue';
-import { computeUsagePercent } from './utils/usage';
-import type { UsageBarData } from './types/usage';
 import TeensySizeCard, { type TeensySizePanel } from './components/TeensySizeCard';
 import RegionUsageCard from './components/RegionUsageCard';
 import MemoryMapCard from './components/MemoryMapCard';
 import TreemapCard from './components/TreemapCard';
-
-const humanizeRegionKind = (kind: RegionKind): string => {
-    switch (kind) {
-        case 'flash':
-            return 'Flash';
-        case 'code_ram':
-            return 'Code RAM';
-        case 'data_ram':
-            return 'Data RAM';
-        case 'dma_ram':
-            return 'DMA RAM';
-        case 'ext_ram':
-            return 'External RAM';
-        default:
-            return 'Other';
-    }
-};
+import { useRegionUsage } from './hooks/useRegionUsage';
+import RuntimeBankCard from './components/RuntimeBankCard';
 
 const { calculateTeensySizeReport } = teensySizeModule as {
     calculateTeensySizeReport: (analysis: Analysis) => TeensySizeReportSummary;
@@ -317,84 +293,11 @@ const App = (): JSX.Element => {
     const isRunDisabled =
         connectionState !== 'connected' || isTriggeringRun || serverStatus?.state === 'running' || !configReady;
 
-    const regionUsage = useMemo<UsageBarData[]>(() => {
-        if (!latestAnalysis) {
-            return [];
-        }
-
-        const runtimeBanks: RuntimeBankSummary[] = latestAnalysis.summaries.runtimeBanks ?? [];
-        if (runtimeBanks.length > 0) {
-            return runtimeBanks.map((bank: RuntimeBankSummary) => {
-                const total = bank.capacityBytes;
-                const used = Math.max(total - bank.freeBytes, 0);
-                const contributors = bank.contributors
-                    .map((contributor) => `${contributor.regionName} (${formatValue(contributor.sizeBytes)})`)
-                    .join(', ');
-
-                const descriptionParts: string[] = [];
-                if (bank.description) {
-                    descriptionParts.push(bank.description);
-                }
-                if (contributors.length > 0) {
-                    descriptionParts.push(`Segments: ${contributors}`);
-                }
-
-                return {
-                    id: bank.bankId,
-                    label: bank.name,
-                    total,
-                    used,
-                    free: bank.freeBytes,
-                    percent: computeUsagePercent(used, total),
-                    description: descriptionParts.join(' • '),
-                };
-            });
-        }
-
-        const regionSummaryEntries: Array<[string, RegionSummary]> = latestAnalysis.summaries.byRegion.map(
-            (summary: RegionSummary) => [summary.regionId, summary],
-        );
-        const regionSummaryMap = new Map<string, RegionSummary>(regionSummaryEntries);
-
-        return latestAnalysis.regions.map((region) => {
-            const summary = regionSummaryMap.get(region.id);
-            const size = summary?.size ?? region.size;
-            const freeRaw =
-                summary?.freeForDynamic !== undefined
-                    ? summary.freeForDynamic
-                    : summary
-                        ? Math.max(size - summary.usedStatic - (summary.reserved ?? 0), 0)
-                        : undefined;
-            const free = freeRaw !== undefined ? Math.max(freeRaw, 0) : undefined;
-            const used =
-                free !== undefined
-                    ? Math.max(size - free, 0)
-                    : summary
-                        ? Math.max(summary.usedStatic + (summary.reserved ?? 0), 0)
-                        : undefined;
-
-            const descriptionParts: string[] = [];
-            if (region.name && region.name !== region.id) {
-                descriptionParts.push(`${region.name} (${region.id})`);
-            } else {
-                descriptionParts.push(`Region ${region.id}`);
-            }
-            descriptionParts.push(`Kind: ${humanizeRegionKind(region.kind)}`);
-            if (summary?.reserved) {
-                descriptionParts.push(`Reserved ${formatValue(summary.reserved)}`);
-            }
-
-            return {
-                id: region.id,
-                label: region.name ?? region.id,
-                total: size,
-                used,
-                free,
-                percent: computeUsagePercent(used, size),
-                description: descriptionParts.join(' • '),
-            };
-        });
-    }, [latestAnalysis]);
+    const { runtimeBanks: runtimeBankUsage, regions: regionUsage } = useRegionUsage({
+        analysis: latestAnalysis,
+        formatValue,
+        includeRuntimeBanks: true,
+    });
 
     const teensySizePanels = useMemo<TeensySizePanel[]>(
         () => {
@@ -653,6 +556,8 @@ const App = (): JSX.Element => {
                 {renderAnalysisSummary()}
 
                 <TeensySizeCard hasAnalysis={Boolean(latestAnalysis)} error={teensySizeError} panels={teensySizePanels} />
+
+                <RuntimeBankCard usage={runtimeBankUsage} lastRunCompletedAt={lastRunCompletedAt} />
 
                 <RegionUsageCard regionUsage={regionUsage} lastRunCompletedAt={lastRunCompletedAt} />
 

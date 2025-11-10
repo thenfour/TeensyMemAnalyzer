@@ -1,4 +1,5 @@
 import { SizeValue } from './SizeValue';
+import AddressValue from './AddressValue';
 import type { UsageBarData } from '../types/usage';
 import { computeUsagePercent } from '../utils/usage';
 
@@ -11,6 +12,38 @@ const RegionUsageCard = ({ regionUsage, lastRunCompletedAt }: RegionUsageCardPro
     const renderUsageBar = (summary: UsageBarData): JSX.Element => {
         const percent = summary.percent ?? computeUsagePercent(summary.used, summary.total);
         const hasPercent = percent !== null;
+
+        const renderAddressRangeRow = (boundsLabel: string, bounds: { start: number; end: number }, meta: NonNullable<UsageBarData['addressRange']>) => {
+            const commonMeta = {
+                regionId: meta.regionId,
+                regionName: meta.regionName,
+                regionKind: meta.regionKind,
+                regionKindLabel: meta.regionKindLabel,
+            };
+
+            return (
+                <div className="usage-address-range-row" key={boundsLabel}>
+                    <span className="usage-address-range-label">{boundsLabel}</span>
+                    <span className="usage-address-range-values">
+                        <AddressValue
+                            value={bounds.start}
+                            meta={{
+                                ...commonMeta,
+                                label: `${boundsLabel} start`,
+                            }}
+                        />
+                        <span className="usage-address-range-separator">–</span>
+                        <AddressValue
+                            value={bounds.end}
+                            meta={{
+                                ...commonMeta,
+                                label: `${boundsLabel} end`,
+                            }}
+                        />
+                    </span>
+                </div>
+            );
+        };
 
         return (
             <div className="usage-item" key={summary.id}>
@@ -29,6 +62,14 @@ const RegionUsageCard = ({ regionUsage, lastRunCompletedAt }: RegionUsageCardPro
                     <p className="usage-free">
                         Free now: <SizeValue value={summary.free} />
                     </p>
+                ) : null}
+                {summary.addressRange ? (
+                    <div className="usage-address-range">
+                        {renderAddressRangeRow('Total range', summary.addressRange.total, summary.addressRange)}
+                        {summary.addressRange.occupied
+                            ? renderAddressRangeRow('Occupied range', summary.addressRange.occupied, summary.addressRange)
+                            : null}
+                    </div>
                 ) : null}
             </div>
         );

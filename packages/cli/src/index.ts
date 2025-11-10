@@ -124,7 +124,7 @@ const printAnalysis = (analysis: Analysis): void => {
     printRegionSummary(regionSummary, analysis);
   });
 
-  console.log('\nTop symbols by size:');
+  console.log('\nTop symbols (region id) by size:');
   const topSymbols = [...analysis.symbols]
     .filter((symbol) => symbol.size > 0)
     .sort((a, b) => b.size - a.size)

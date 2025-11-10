@@ -14,7 +14,7 @@ export interface LoadMemoryMapOptions {
   schemaPath?: string;
 }
 
-const DEFAULT_CONFIG_DIR = path.resolve(__dirname, '../../../config');
+const DEFAULT_CONFIG_DIR = path.resolve(__dirname, '../../../../config');
 
 const validatorCache = new Map<string, ValidateFunction>();
 

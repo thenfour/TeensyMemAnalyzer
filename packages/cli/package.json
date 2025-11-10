@@ -9,7 +9,8 @@
     "main": "dist/index.js",
     "scripts": {
         "build": "tsc -b",
-        "clean": "rimraf dist"
+        "clean": "rimraf dist",
+        "teensy-mem-explorer": "node dist/index.js"
     },
     "dependencies": {
         "@teensy-mem-explorer/analyzer": "^0.1.0"

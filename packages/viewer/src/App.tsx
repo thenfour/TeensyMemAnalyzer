@@ -1,5 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { Analysis } from '@teensy-mem-explorer/analyzer';
 import type { HealthResponse, ServerConfig, ServerMessage, ServerStatusPayload } from './shared/protocol';
+
+const formatBytes = (value: number | undefined): string => {
+    if (value === undefined || Number.isNaN(value)) {
+        return '—';
+    }
+    if (value >= 1024 * 1024) {
+        return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
+    }
+    if (value >= 1024) {
+        return `${(value / 1024).toFixed(1)} KiB`;
+    }
+    return `${value} B`;
+};
 
 const App = (): JSX.Element => {
     const [analysisSummary, setAnalysisSummary] = useState<string | null>(null);
@@ -15,6 +29,9 @@ const App = (): JSX.Element => {
     });
     const [isSavingConfig, setIsSavingConfig] = useState(false);
     const [configError, setConfigError] = useState<string | null>(null);
+    const [isTriggeringRun, setIsTriggeringRun] = useState(false);
+    const [runError, setRunError] = useState<string | null>(null);
+    const [latestAnalysis, setLatestAnalysis] = useState<Analysis | null>(null);
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
         const file = event.target.files?.[0];
@@ -28,7 +45,7 @@ const App = (): JSX.Element => {
             // For now just parse and summarize top-level keys to validate ingestion.
             const json = JSON.parse(text) as Record<string, unknown>;
             const keys = Object.keys(json).sort();
-            setAnalysisSummary(`Loaded analysis with top-level keys: ${keys.join(', ')}`);
+            setAnalysisSummary(`[Manual] Loaded analysis with top-level keys: ${keys.join(', ')}`);
         } catch (error) {
             console.error('Failed to parse analysis JSON', error);
             setAnalysisSummary('Failed to parse analysis JSON. Please check the file contents.');
@@ -97,6 +114,17 @@ const App = (): JSX.Element => {
                     } else if (message.type === 'config') {
                         setConfig(message.payload ?? {});
                         setPendingConfig(message.payload ?? {});
+                    } else if (message.type === 'analysis') {
+                        setLatestAnalysis(message.payload.analysis);
+
+                        const totals = message.payload.analysis.summaries?.totals;
+                        if (totals) {
+                            setAnalysisSummary(
+                                `Server analysis (${message.payload.analysis.target.name}) — Flash ${formatBytes(
+                                    totals.flashUsed,
+                                )}, RAM ${formatBytes(totals.ramUsed)}`,
+                            );
+                        }
                     }
                 } catch (error) {
                     console.warn('Failed to parse server message', error);
@@ -188,6 +216,33 @@ const App = (): JSX.Element => {
         }
     };
 
+    const handleManualRun = async (): Promise<void> => {
+        if (connectionState !== 'connected') {
+            return;
+        }
+
+        setIsTriggeringRun(true);
+        setRunError(null);
+
+        try {
+            const response = await fetch('/api/run', {
+                method: 'POST',
+            });
+
+            if (!response.ok) {
+                throw new Error(`Run request failed with status ${response.status}`);
+            }
+        } catch (error) {
+            setRunError(error instanceof Error ? error.message : 'Failed to trigger analysis');
+        } finally {
+            setIsTriggeringRun(false);
+        }
+    };
+
+    const configReady = Boolean(pendingConfig.targetId && pendingConfig.elfPath);
+    const isRunDisabled =
+        connectionState !== 'connected' || isTriggeringRun || serverStatus?.state === 'running' || !configReady;
+
     return (
         <div className="app-root">
             <header>
@@ -206,11 +261,29 @@ const App = (): JSX.Element => {
                             <dt>Status</dt>
                             <dd>{statusLabel}</dd>
                         </div>
+                        {latestAnalysis && (
+                            <div>
+                                <dt>Target</dt>
+                                <dd>{latestAnalysis.target.name}</dd>
+                            </div>
+                        )}
                         {serverStatus?.lastRunCompletedAt && (
                             <div>
                                 <dt>Last analysis</dt>
                                 <dd>{new Date(serverStatus.lastRunCompletedAt).toLocaleString()}</dd>
                             </div>
+                        )}
+                        {latestAnalysis && (
+                            <>
+                                <div>
+                                    <dt>Flash used</dt>
+                                    <dd>{formatBytes(latestAnalysis.summaries.totals.flashUsed)}</dd>
+                                </div>
+                                <div>
+                                    <dt>RAM used</dt>
+                                    <dd>{formatBytes(latestAnalysis.summaries.totals.ramUsed)}</dd>
+                                </div>
+                            </>
                         )}
                         {health?.version && (
                             <div>
@@ -222,6 +295,22 @@ const App = (): JSX.Element => {
                             <div className="status-error">{connectionError}</div>
                         )}
                     </dl>
+
+                    <div className="status-actions">
+                        <button type="button" onClick={handleManualRun} disabled={isRunDisabled}>
+                            {isTriggeringRun || serverStatus?.state === 'running' ? 'Running…' : 'Run Analysis'}
+                        </button>
+                        {!configReady && (
+                            <span className="status-hint">Set target ID and ELF path to enable analysis.</span>
+                        )}
+                        {configReady && !(pendingConfig.autoRun ?? false) && (
+                            <span className="status-hint">Auto-run is off. Use this button after builds.</span>
+                        )}
+                    </div>
+
+                    {(runError || serverStatus?.errorMessage) && (
+                        <div className="status-error">{runError ?? serverStatus?.errorMessage}</div>
+                    )}
                 </section>
 
                 <section className="config-card">

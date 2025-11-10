@@ -1,3 +1,5 @@
+import type { Analysis } from '@teensy-mem-explorer/analyzer';
+
 export type ServerLifecycleState = 'idle' | 'watching' | 'running' | 'error';
 
 export interface ServerStatusPayload {
@@ -12,6 +14,7 @@ export interface HealthResponse {
   version: string;
   port: number;
   state: ServerStatusPayload;
+  latestAnalysisGeneratedAt?: string;
 }
 
 export interface ServerConfig {
@@ -24,7 +27,13 @@ export interface ServerConfig {
   autoRun?: boolean;
 }
 
+export interface AnalysisBroadcastPayload {
+  analysis: Analysis;
+  generatedAt: string;
+}
+
 export type ServerMessage =
   | { type: 'status'; payload: ServerStatusPayload }
   | { type: 'hello'; payload: { message: string } }
-  | { type: 'config'; payload: ServerConfig };
+  | { type: 'config'; payload: ServerConfig }
+  | { type: 'analysis'; payload: AnalysisBroadcastPayload };

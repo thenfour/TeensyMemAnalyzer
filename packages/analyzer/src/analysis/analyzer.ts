@@ -41,7 +41,7 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
   const analysis = createEmptyAnalysis();
 
   analysis.target = {
-    name: deriveTargetName(targetId),
+    name: memoryMap.displayName ?? deriveTargetName(targetId),
     addressModel: 'flat',
     pointerSize: 4,
   };
@@ -111,6 +111,8 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
     runtimeBanks: memoryMap.runtimeBanks,
     runtimeGroups: memoryMap.runtimeGroups,
   });
+
+  analysis.reporting = memoryMap.reports ?? {};
 
   return analysis;
 };

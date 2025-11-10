@@ -45,6 +45,41 @@ export interface RuntimeGroupConfig {
   description?: string;
 }
 
+export interface TeensySizeFlashReportConfig {
+  groupId?: string;
+  bankIds?: string[];
+  sectionBreakdown: {
+    headers: string[];
+    code: string[];
+    data: string[];
+  };
+}
+
+export interface TeensySizeRam1ReportConfig {
+  groupId?: string;
+  codeBankIds: string[];
+  dataBankIds: string[];
+  codeRoundingGranuleBytes?: number;
+  sharedCapacityBytes?: number;
+  dataCategories?: SectionCategory[];
+}
+
+export interface TeensySizeRam2ReportConfig {
+  groupId?: string;
+  bankIds?: string[];
+  variableCategories?: SectionCategory[];
+}
+
+export interface TeensySizeReportConfig {
+  flash?: TeensySizeFlashReportConfig;
+  ram1?: TeensySizeRam1ReportConfig;
+  ram2?: TeensySizeRam2ReportConfig;
+}
+
+export interface ReportsConfig {
+  teensySize?: TeensySizeReportConfig;
+}
+
 export type SectionCategory =
   | 'code'
   | 'code_fast'
@@ -190,15 +225,18 @@ export interface Analysis {
   sections: Section[];
   symbols: Symbol[];
   summaries: Summaries;
+  reporting: ReportsConfig;
 }
 
 export interface MemoryMapRegionConfig extends Region {}
 
 export interface MemoryMapConfig {
   targetId: string;
+  displayName?: string;
   regions: MemoryMapRegionConfig[];
   runtimeBanks?: RuntimeBankConfig[];
   runtimeGroups?: RuntimeGroupConfig[];
+  reports?: ReportsConfig;
 }
 
 export const createEmptyAnalysis = (): Analysis => ({
@@ -234,6 +272,7 @@ export const createEmptyAnalysis = (): Analysis => ({
     runtimeBanks: [],
     runtimeGroups: [],
   },
+  reporting: {},
 });
 
 export interface AnalyzeBuildParams {

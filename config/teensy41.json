@@ -1,6 +1,7 @@
 {
     "$schema": "./schema/memory-map.schema.json",
     "targetId": "teensy41",
+    "displayName": "Teensy 4.1",
     "regions": [
         {
             "id": "FLASH",
@@ -62,6 +63,52 @@
             "size": 33554432
         }
     ],
+    "reports": {
+        "teensySize": {
+            "flash": {
+                "groupId": "flash",
+                "sectionBreakdown": {
+                    "headers": [
+                        ".text.headers",
+                        ".text.csf"
+                    ],
+                    "code": [
+                        ".text.code",
+                        ".text.itcm",
+                        ".ARM.exidx"
+                    ],
+                    "data": [
+                        ".text.progmem",
+                        ".data"
+                    ]
+                }
+            },
+            "ram1": {
+                "groupId": "ram1",
+                "codeBankIds": [
+                    "ram1_itcm"
+                ],
+                "dataBankIds": [
+                    "ram1_dtcm"
+                ],
+                "codeRoundingGranuleBytes": 32768,
+                "sharedCapacityBytes": 524288,
+                "dataCategories": [
+                    "data_init",
+                    "bss"
+                ]
+            },
+            "ram2": {
+                "groupId": "ram2",
+                "variableCategories": [
+                    "data_init",
+                    "bss",
+                    "dma",
+                    "other"
+                ]
+            }
+        }
+    },
     "runtimeBanks": [
         {
             "id": "flash_exec",

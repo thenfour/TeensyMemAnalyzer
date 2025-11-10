@@ -13,6 +13,9 @@
         "targetId": {
             "type": "string"
         },
+        "displayName": {
+            "type": "string"
+        },
         "regions": {
             "type": "array",
             "items": {
@@ -168,6 +171,173 @@
                 },
                 "additionalProperties": false
             }
+        },
+        "reports": {
+            "type": "object",
+            "properties": {
+                "teensySize": {
+                    "type": "object",
+                    "properties": {
+                        "flash": {
+                            "type": "object",
+                            "properties": {
+                                "groupId": {
+                                    "type": "string"
+                                },
+                                "bankIds": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "sectionBreakdown": {
+                                    "type": "object",
+                                    "properties": {
+                                        "headers": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "code": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "headers",
+                                        "code",
+                                        "data"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            },
+                            "required": [
+                                "sectionBreakdown"
+                            ],
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "groupId"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "bankIds"
+                                    ]
+                                }
+                            ],
+                            "additionalProperties": false
+                        },
+                        "ram1": {
+                            "type": "object",
+                            "properties": {
+                                "groupId": {
+                                    "type": "string"
+                                },
+                                "codeBankIds": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "dataBankIds": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "codeRoundingGranuleBytes": {
+                                    "type": "number",
+                                    "minimum": 0
+                                },
+                                "sharedCapacityBytes": {
+                                    "type": "number",
+                                    "minimum": 0
+                                },
+                                "dataCategories": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "string",
+                                        "enum": [
+                                            "code",
+                                            "code_fast",
+                                            "rodata",
+                                            "data_init",
+                                            "bss",
+                                            "dma",
+                                            "other"
+                                        ]
+                                    }
+                                }
+                            },
+                            "required": [
+                                "codeBankIds",
+                                "dataBankIds"
+                            ],
+                            "additionalProperties": false
+                        },
+                        "ram2": {
+                            "type": "object",
+                            "properties": {
+                                "groupId": {
+                                    "type": "string"
+                                },
+                                "bankIds": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "variableCategories": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "string",
+                                        "enum": [
+                                            "code",
+                                            "code_fast",
+                                            "rodata",
+                                            "data_init",
+                                            "bss",
+                                            "dma",
+                                            "other"
+                                        ]
+                                    }
+                                }
+                            },
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "groupId"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "bankIds"
+                                    ]
+                                }
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "additionalProperties": false
         }
     },
     "additionalProperties": false

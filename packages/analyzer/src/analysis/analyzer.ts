@@ -8,6 +8,9 @@ import {
   Region,
 } from '../model';
 import { resolveToolchain } from '../toolchain/resolver';
+import { runCommand } from '../utils/exec';
+import { parseReadelfSections } from '../parsers/readelf';
+import { assignRegionsToSections } from './region-assignment';
 
 const deriveTargetName = (targetId: string): string => {
   switch (targetId) {
@@ -47,8 +50,29 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
 
   analysis.regions = mapRegions(memoryMap);
 
-  // TODO: populate sections, symbols, and summaries by parsing the ELF/MAP files.
-  void toolchain;
+  const sectionsResult = await runCommand(toolchain.readelf, ['-S', analysis.build.elfPath]);
+  if (sectionsResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to read section headers from ELF.\nCommand: ${toolchain.readelf} -S ${analysis.build.elfPath}\n${sectionsResult.stderr.trim()}`,
+    );
+  }
+
+  const sections = parseReadelfSections(sectionsResult.stdout);
+  const regionAssignment = assignRegionsToSections(analysis.regions, sections);
+  analysis.sections = regionAssignment.sections;
+
+  if (regionAssignment.warnings.length > 0) {
+    // TODO: surface warnings in analysis metadata once available.
+    // Currently, we simply log them for visibility.
+    regionAssignment.warnings.forEach((warning) => {
+      // eslint-disable-next-line no-console
+      console.warn(warning);
+    });
+  }
+
+  // TODO: assign sections to regions and calculate summaries once symbol data is available.
+
+  void toolchain; // placeholder until we use other commands
 
   return analysis;
 };

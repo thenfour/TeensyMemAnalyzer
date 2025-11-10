@@ -51,12 +51,10 @@ const accumulateTotals = (
   switch (regionKind) {
     case 'flash':
       totals.flashUsed += size;
-      if (category === 'code') {
+      if (category === 'code' || category === 'code_fast') {
         totals.flashCode += size;
       } else if (category === 'rodata') {
         totals.flashConst += size;
-      } else if (category === 'data_init' || category === 'code_fast') {
-        totals.flashInitImages += size;
       }
       break;
     case 'code_ram':
@@ -111,20 +109,38 @@ export const calculateSummaries = (regions: Region[], sections: Section[]): Summ
   byRegion.forEach((summary) => regionSummaryMap.set(summary.regionId, summary));
 
   sections.forEach((section) => {
-    if (!section.execRegionId || section.size === 0) {
+    if (section.size === 0) {
       return;
     }
 
-    const region = regionMap.get(section.execRegionId);
-    const summary = regionSummaryMap.get(section.execRegionId);
-    if (!region || !summary) {
-      return;
+    const execRegion = section.execRegionId ? regionMap.get(section.execRegionId) : undefined;
+    const execSummary = section.execRegionId ? regionSummaryMap.get(section.execRegionId) : undefined;
+
+    if (execRegion && execSummary) {
+      execSummary.usedStatic += section.size;
+      addToCategoryMap(execSummary.usedByCategory, section.category, section.size);
+      accumulateTotals(totals, execRegion.kind, section.category, section.size);
+      addToCategoryMap(globalCategoryTotals, section.category, section.size);
     }
 
-    summary.usedStatic += section.size;
-    addToCategoryMap(summary.usedByCategory, section.category, section.size);
-    accumulateTotals(totals, region.kind, section.category, section.size);
-    addToCategoryMap(globalCategoryTotals, section.category, section.size);
+    const shouldApplyLoadContribution = Boolean(
+      section.loadRegionId && (section.isCopySection || !section.execRegionId),
+    );
+
+    if (shouldApplyLoadContribution) {
+      const loadRegion = section.loadRegionId ? regionMap.get(section.loadRegionId) : undefined;
+      const loadSummary = section.loadRegionId ? regionSummaryMap.get(section.loadRegionId) : undefined;
+
+      if (loadRegion && loadSummary) {
+        loadSummary.usedStatic += section.size;
+        addToCategoryMap(loadSummary.usedByCategory, section.category, section.size);
+
+        if (loadRegion.kind === 'flash') {
+          totals.flashUsed += section.size;
+          totals.flashInitImages += section.size;
+        }
+      }
+    }
   });
 
   byRegion.forEach((summary) => {

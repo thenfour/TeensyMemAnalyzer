@@ -3,8 +3,12 @@ import { Region, Section } from '../model';
 const withinRange = (address: number, start: number, size: number): boolean =>
   address >= start && address < start + size;
 
-const findRegionForAddress = (regions: Region[], address: number): Region | undefined =>
-  regions.find((region) => withinRange(address, region.start, region.size));
+const findRegionForAddress = (regions: Region[], address: number | undefined): Region | undefined => {
+  if (address === undefined) {
+    return undefined;
+  }
+  return regions.find((region) => withinRange(address, region.start, region.size));
+};
 
 export interface AssignRegionsResult {
   sections: Section[];
@@ -18,15 +22,29 @@ export const assignRegionsToSections = (regions: Region[], sections: Section[]):
       return section;
     }
 
-    const region = findRegionForAddress(regions, section.vmaStart);
-    if (!region) {
+    const execRegion = findRegionForAddress(regions, section.vmaStart);
+    if (!execRegion) {
       warnings.push(`Section ${section.name} at 0x${section.vmaStart.toString(16)} does not map to any region.`);
-      return section;
     }
+
+    const hasLoadAddress = section.lmaStart !== undefined && section.lmaStart !== 0;
+    const loadRegion = hasLoadAddress ? findRegionForAddress(regions, section.lmaStart) : undefined;
+
+    if (hasLoadAddress && !loadRegion) {
+      warnings.push(
+        `Section ${section.name} load address 0x${section.lmaStart?.toString(16)} does not map to any region.`,
+      );
+    }
+
+    const isCopySection = Boolean(
+      hasLoadAddress && loadRegion && execRegion && section.lmaStart !== section.vmaStart,
+    );
 
     return {
       ...section,
-      execRegionId: region.id,
+      execRegionId: execRegion?.id,
+      loadRegionId: loadRegion?.id,
+      isCopySection,
     };
   });
 

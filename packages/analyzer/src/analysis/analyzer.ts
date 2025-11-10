@@ -10,6 +10,7 @@ import {
 import { resolveToolchain } from '../toolchain/resolver';
 import { runCommand } from '../utils/exec';
 import { parseReadelfSections } from '../parsers/readelf';
+import { parseObjdumpSectionHeaders } from '../parsers/objdump';
 import { assignRegionsToSections } from './region-assignment';
 import { calculateSummaries } from './summaries';
 
@@ -59,6 +60,22 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
   }
 
   const sections = parseReadelfSections(sectionsResult.stdout);
+
+  const objdumpResult = await runCommand(toolchain.objdump, ['-h', analysis.build.elfPath]);
+  if (objdumpResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to read load addresses from ELF.\nCommand: ${toolchain.objdump} -h ${analysis.build.elfPath}\n${objdumpResult.stderr.trim()}`,
+    );
+  }
+
+  const objdumpSections = parseObjdumpSectionHeaders(objdumpResult.stdout);
+  sections.forEach((section) => {
+    const info = objdumpSections.get(section.name);
+    if (info) {
+      section.lmaStart = info.lma;
+    }
+  });
+
   const regionAssignment = assignRegionsToSections(analysis.regions, sections);
   analysis.sections = regionAssignment.sections;
 
@@ -72,8 +89,6 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
   }
 
   analysis.summaries = calculateSummaries(analysis.regions, analysis.sections);
-
-  void toolchain; // placeholder until we use other commands
 
   return analysis;
 };

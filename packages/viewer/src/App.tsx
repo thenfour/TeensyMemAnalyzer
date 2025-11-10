@@ -15,13 +15,12 @@ import type {
     ServerStatusPayload,
 } from './shared/protocol';
 import { SizeValue, useSizeFormat } from './components/SizeValue';
-
-const computeUsagePercent = (used: number | undefined, total: number | undefined): number | null => {
-    if (used === undefined || total === undefined || total === 0) {
-        return null;
-    }
-    return Math.min(100, Math.max(0, (used / total) * 100));
-};
+import { computeUsagePercent } from './utils/usage';
+import type { UsageBarData } from './types/usage';
+import TeensySizeCard, { type TeensySizePanel } from './components/TeensySizeCard';
+import RegionUsageCard from './components/RegionUsageCard';
+import MemoryMapCard from './components/MemoryMapCard';
+import TreemapCard from './components/TreemapCard';
 
 const humanizeRegionKind = (kind: RegionKind): string => {
     switch (kind) {
@@ -40,47 +39,9 @@ const humanizeRegionKind = (kind: RegionKind): string => {
     }
 };
 
-type UsageBarData = {
-    id: string;
-    label: string;
-    used: number | undefined;
-    total: number | undefined;
-    free?: number | undefined;
-    percent: number | null;
-    description?: string;
-};
-
 const { calculateTeensySizeReport } = teensySizeModule as {
     calculateTeensySizeReport: (analysis: Analysis) => TeensySizeReportSummary;
 };
-
-type TopLevelGroup = {
-    id: string;
-    label: string;
-    description: string;
-    kinds: RegionKind[];
-};
-
-const TOP_LEVEL_GROUPS: TopLevelGroup[] = [
-    {
-        id: 'flash',
-        label: 'Flash',
-        description: 'Program storage in onboard flash (read-only at runtime).',
-        kinds: ['flash'],
-    },
-    {
-        id: 'ram1',
-        label: 'RAM1',
-        description: 'Tightly coupled RAM for instructions, globals, stack, and heap.',
-        kinds: ['code_ram', 'data_ram'],
-    },
-    {
-        id: 'ram2',
-        label: 'RAM2',
-        description: 'AXI RAM well-suited for DMA buffers and large allocations.',
-        kinds: ['dma_ram'],
-    },
-];
 
 type AnalysisSummaryState =
     | {
@@ -435,13 +396,13 @@ const App = (): JSX.Element => {
         });
     }, [latestAnalysis]);
 
-    const teensySizePanels = useMemo(
+    const teensySizePanels = useMemo<TeensySizePanel[]>(
         () => {
             if (!teensySizeReport) {
-                return [] as { title: string; rows: { label: string; value: number | undefined }[] }[];
+                return [];
             }
 
-            const panels: { title: string; rows: { label: string; value: number | undefined }[] }[] = [];
+            const panels: TeensySizePanel[] = [];
 
             if (teensySizeReport.flash) {
                 const { code, data, headers, freeForFiles } = teensySizeReport.flash;
@@ -484,34 +445,6 @@ const App = (): JSX.Element => {
         },
         [teensySizeReport],
     );
-    const hasTeensySizeReport = teensySizePanels.length > 0;
-
-    const renderUsageBar = (summary: UsageBarData): JSX.Element => {
-        const percent = summary.percent ?? computeUsagePercent(summary.used, summary.total);
-        const hasPercent = percent !== null;
-
-        return (
-            <div className="usage-item" key={summary.id}>
-                <div className="usage-header">
-                    <span className="usage-label">{summary.label}</span>
-                    <span className="usage-values">
-                        <SizeValue value={summary.used} /> / <SizeValue value={summary.total} />
-                        {hasPercent ? ` (${percent.toFixed(1)}%)` : ''}
-                    </span>
-                </div>
-                <div className="usage-bar">
-                    <div className="usage-bar-fill" style={{ width: hasPercent ? `${percent}%` : '0%' }} />
-                </div>
-                {summary.description ? <p className="usage-description">{summary.description}</p> : null}
-                {summary.free !== undefined ? (
-                    <p className="usage-free">
-                        Free now: <SizeValue value={summary.free} />
-                    </p>
-                ) : null}
-            </div>
-        );
-    };
-
     const lastRunCompletedAt = serverStatus?.lastRunCompletedAt
         ? new Date(serverStatus.lastRunCompletedAt)
         : null;
@@ -719,80 +652,13 @@ const App = (): JSX.Element => {
                 </label>
                 {renderAnalysisSummary()}
 
-                <section className="summary-card">
-                    <div className="summary-header">
-                        <h2>Teensy-size Compatibility</h2>
-                        <div className="summary-meta">
-                            {latestAnalysis ? (
-                                teensySizeError ? (
-                                    <span className="summary-updated">Calculation error</span>
-                                ) : hasTeensySizeReport ? (
-                                    <span className="summary-updated">Config-driven teensy_size buckets</span>
-                                ) : (
-                                    <span className="summary-updated">No mapping for this target</span>
-                                )
-                            ) : (
-                                <span className="summary-updated">Awaiting first analysis</span>
-                            )}
-                        </div>
-                    </div>
-                    {!latestAnalysis ? (
-                        <p className="summary-placeholder">Run an analysis to compute teensy_size metrics.</p>
-                    ) : teensySizeError ? (
-                        <p className="summary-placeholder">Failed to compute teensy_size metrics: {teensySizeError}</p>
-                    ) : hasTeensySizeReport ? (
-                        <div className="usage-grid teensy-size-grid">
-                            {teensySizePanels.map((panel) => (
-                                <div className="teensy-size-card" key={panel.title}>
-                                    <h3>{panel.title}</h3>
-                                    <dl>
-                                        {panel.rows.map((row) => (
-                                            <div key={row.label}>
-                                                <dt>{row.label}</dt>
-                                                <dd>
-                                                    <SizeValue value={row.value} />
-                                                </dd>
-                                            </div>
-                                        ))}
-                                    </dl>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="summary-placeholder">Target configuration does not define teensy_size report mappings.</p>
-                    )}
-                </section>
+                <TeensySizeCard hasAnalysis={Boolean(latestAnalysis)} error={teensySizeError} panels={teensySizePanels} />
 
-                <section className="summary-card region-card">
-                    <div className="summary-header">
-                        <h2>Regions</h2>
-                        <div className="summary-meta">
-                            {lastRunCompletedAt ? (
-                                <span className="summary-updated">Based on {lastRunCompletedAt.toLocaleString()}</span>
-                            ) : (
-                                <span className="summary-updated">Awaiting first analysis</span>
-                            )}
-                        </div>
-                    </div>
-                    {regionUsage.length > 0 ? (
-                        <div className="usage-grid region-list">
-                            {regionUsage.map((usage) => renderUsageBar(usage))}
-                        </div>
-                    ) : (
-                        <p className="summary-placeholder">Run an analysis to see per-region usage.</p>
-                    )}
-                </section>
-
+                <RegionUsageCard regionUsage={regionUsage} lastRunCompletedAt={lastRunCompletedAt} />
 
                 <section className="placeholder-grid">
-                    <div className="panel">
-                        <h2>Memory Map</h2>
-                        <p>Interactive region visualization coming soon.</p>
-                    </div>
-                    <div className="panel">
-                        <h2>Treemap</h2>
-                        <p>Symbol treemap will appear here after selecting an analysis.</p>
-                    </div>
+                    <MemoryMapCard />
+                    <TreemapCard />
                 </section>
             </main>
         </div>

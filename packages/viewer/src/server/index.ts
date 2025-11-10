@@ -1,12 +1,8 @@
 import express, { type Request, type Response } from 'express';
 import http from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
-import { createRequire } from 'module';
-import type { AnalyzeBuildParams, Analysis } from '@teensy-mem-explorer/analyzer';
+import { analyzeBuild, type AnalyzeBuildParams, type Analysis } from '@teensy-mem-explorer/analyzer';
 import type { AnalysisBroadcastPayload, ServerConfig, ServerMessage, ServerStatusPayload } from '../shared/protocol';
-
-const require = createRequire(import.meta.url);
-const { analyzeBuild } = require('@teensy-mem-explorer/analyzer') as typeof import('@teensy-mem-explorer/analyzer');
 
 const DEFAULT_PORT = Number.parseInt(process.env.TME_VIEWER_PORT ?? '5317', 10);
 const VERSION = '0.1.0-dev';

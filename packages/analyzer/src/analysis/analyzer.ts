@@ -11,6 +11,7 @@ import { resolveToolchain } from '../toolchain/resolver';
 import { runCommand } from '../utils/exec';
 import { parseReadelfSections } from '../parsers/readelf';
 import { assignRegionsToSections } from './region-assignment';
+import { calculateSummaries } from './summaries';
 
 const deriveTargetName = (targetId: string): string => {
   switch (targetId) {
@@ -70,7 +71,7 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
     });
   }
 
-  // TODO: assign sections to regions and calculate summaries once symbol data is available.
+  analysis.summaries = calculateSummaries(analysis.regions, analysis.sections);
 
   void toolchain; // placeholder until we use other commands
 

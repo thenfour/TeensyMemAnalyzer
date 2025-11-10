@@ -107,7 +107,10 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
     });
   }
 
-  analysis.summaries = calculateSummaries(analysis.regions, analysis.sections);
+  analysis.summaries = calculateSummaries(analysis.regions, analysis.sections, {
+    runtimeBanks: memoryMap.runtimeBanks,
+    runtimeGroups: memoryMap.runtimeGroups,
+  });
 
   return analysis;
 };

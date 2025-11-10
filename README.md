@@ -91,8 +91,8 @@ The analyzer keeps the core platform-neutral; Teensy specifics live in config fi
 
 ---
 
-## Future Enhancements (Ideas)
-- Rich UI visualizations (treemaps, tables) built atop the JSON model.
-- Build-to-build diffing of memory usage.
-- Padding analysis or source-level annotations.
-- Optional runtime telemetry overlays (stack high-water marks, etc.).
+```
+
+cls && yarn run build && yarn workspace @teensy-mem-explorer/viewer dev
+
+```

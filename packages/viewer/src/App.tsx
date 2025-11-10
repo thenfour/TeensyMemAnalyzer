@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Analysis, RegionKind, RegionSummary } from '@teensy-mem-explorer/analyzer';
-import type { HealthResponse, ServerConfig, ServerMessage, ServerStatusPayload } from './shared/protocol';
+import type {
+    HealthResponse,
+    ServerConfig,
+    ServerMessage,
+    ServerStatusPayload,
+} from './shared/protocol';
 
 const formatBytes = (value: number | undefined): string => {
     if (value === undefined || Number.isNaN(value)) {
@@ -54,6 +59,37 @@ type TopLevelGroup = {
     label: string;
     description: string;
     kinds: RegionKind[];
+};
+
+type RuntimeGroupSummaryLike = {
+    groupId: string;
+    name: string;
+    description?: string;
+    capacityBytes: number;
+    usedStaticBytes: number;
+    reservedBytes: number;
+    freeBytes: number;
+    bankIds: string[];
+};
+
+type RuntimeBankContributorSummaryLike = {
+    regionId: string;
+    regionName: string;
+    sizeBytes: number;
+    usedStaticBytes: number;
+    reservedBytes: number;
+};
+
+type RuntimeBankSummaryLike = {
+    bankId: string;
+    name: string;
+    kind: string;
+    description?: string;
+    capacityBytes: number;
+    usedStaticBytes: number;
+    reservedBytes: number;
+    freeBytes: number;
+    contributors: RuntimeBankContributorSummaryLike[];
 };
 
 const TOP_LEVEL_GROUPS: TopLevelGroup[] = [
@@ -309,6 +345,27 @@ const App = (): JSX.Element => {
             return [];
         }
 
+        const runtimeGroups =
+            (latestAnalysis.summaries as unknown as {
+                runtimeGroups?: RuntimeGroupSummaryLike[];
+            }).runtimeGroups ?? [];
+
+        if (runtimeGroups.length > 0) {
+            return runtimeGroups.map((group: RuntimeGroupSummaryLike) => {
+                const total = group.capacityBytes;
+                const used = Math.max(total - group.freeBytes, 0);
+                return {
+                    id: group.groupId,
+                    label: group.name,
+                    total,
+                    used,
+                    free: group.freeBytes,
+                    percent: computeUsagePercent(used, total),
+                    description: group.description,
+                };
+            });
+        }
+
         const regionSummaryMap = new Map<string, RegionSummary>(
             latestAnalysis.summaries.byRegion.map((summary) => [summary.regionId, summary]),
         );
@@ -365,6 +422,38 @@ const App = (): JSX.Element => {
     const regionUsage = useMemo<UsageBarData[]>(() => {
         if (!latestAnalysis) {
             return [];
+        }
+
+        const runtimeBanks =
+            (latestAnalysis.summaries as unknown as {
+                runtimeBanks?: RuntimeBankSummaryLike[];
+            }).runtimeBanks ?? [];
+        if (runtimeBanks.length > 0) {
+            return runtimeBanks.map((bank: RuntimeBankSummaryLike) => {
+                const total = bank.capacityBytes;
+                const used = Math.max(total - bank.freeBytes, 0);
+                const contributors = bank.contributors
+                    .map((contributor: RuntimeBankContributorSummaryLike) => `${contributor.regionName} (${formatBytes(contributor.sizeBytes)})`)
+                    .join(', ');
+
+                const descriptionParts: string[] = [];
+                if (bank.description) {
+                    descriptionParts.push(bank.description);
+                }
+                if (contributors.length > 0) {
+                    descriptionParts.push(`Segments: ${contributors}`);
+                }
+
+                return {
+                    id: bank.bankId,
+                    label: bank.name,
+                    total,
+                    used,
+                    free: bank.freeBytes,
+                    percent: computeUsagePercent(used, total),
+                    description: descriptionParts.join(' • '),
+                };
+            });
         }
 
         const regionSummaryMap = new Map<string, RegionSummary>(

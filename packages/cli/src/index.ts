@@ -11,6 +11,8 @@ import {
   RegionSummary,
   Section,
   SectionCategory,
+  RuntimeBankSummary,
+  RuntimeGroupSummary,
   resolveSymbolSource,
 } from '@teensy-mem-explorer/analyzer';
 
@@ -270,45 +272,172 @@ const computeTeensySizeSummary = (analysis: Analysis): TeensySizeSummary => {
     regionSummaries.set(summary.regionId, summary);
   });
 
+  const regionMap = new Map<string, Region>();
+  analysis.regions.forEach((region) => {
+    regionMap.set(region.id, region);
+  });
+
   const sectionSizes = createSectionSizeMap(analysis.sections);
   const getSectionSize = (name: string): number => sectionSizes.get(name) ?? 0;
 
+  const runtimeGroupMap = new Map<string, RuntimeGroupSummary>();
+  const runtimeGroupLookup = new Map<string, RuntimeGroupSummary>();
+  analysis.summaries.runtimeGroups.forEach((group) => {
+    runtimeGroupMap.set(group.groupId, group);
+    runtimeGroupLookup.set(group.groupId.toLowerCase(), group);
+    runtimeGroupLookup.set(group.name.toLowerCase(), group);
+  });
+
+  const runtimeBankMap = new Map<string, RuntimeBankSummary>();
+  const runtimeBankLookup = new Map<string, RuntimeBankSummary>();
+  analysis.summaries.runtimeBanks.forEach((bank) => {
+    runtimeBankMap.set(bank.bankId, bank);
+    runtimeBankLookup.set(bank.bankId.toLowerCase(), bank);
+    runtimeBankLookup.set(bank.name.toLowerCase(), bank);
+  });
+
+  const resolveGroup = (...keys: string[]): RuntimeGroupSummary | undefined => {
+    for (const key of keys) {
+      if (!key) {
+        continue;
+      }
+      const direct = runtimeGroupMap.get(key);
+      if (direct) {
+        return direct;
+      }
+      const normalized = key.toLowerCase();
+      const lookup = runtimeGroupLookup.get(normalized);
+      if (lookup) {
+        return lookup;
+      }
+    }
+    return undefined;
+  };
+
+  const resolveBank = (...keys: string[]): RuntimeBankSummary | undefined => {
+    for (const key of keys) {
+      if (!key) {
+        continue;
+      }
+      const direct = runtimeBankMap.get(key);
+      if (direct) {
+        return direct;
+      }
+      const normalized = key.toLowerCase();
+      const lookup = runtimeBankLookup.get(normalized);
+      if (lookup) {
+        return lookup;
+      }
+    }
+    return undefined;
+  };
+
+  const groupBanks = (group: RuntimeGroupSummary | undefined): RuntimeBankSummary[] => {
+    if (!group) {
+      return [];
+    }
+    return group.bankIds
+      .map((bankId) => resolveBank(bankId))
+      .filter((bank): bank is RuntimeBankSummary => Boolean(bank));
+  };
+
+  const collectRegionIds = (banks: RuntimeBankSummary[], predicate?: (region: Region) => boolean): string[] => {
+    if (banks.length === 0) {
+      return [];
+    }
+    const ids = new Set<string>();
+    banks.forEach((bank) => {
+      bank.contributors.forEach((contributor) => {
+        const region = regionMap.get(contributor.regionId);
+        if (!region) {
+          return;
+        }
+        if (predicate && !predicate(region)) {
+          return;
+        }
+        ids.add(region.id);
+      });
+    });
+    return Array.from(ids);
+  };
+
+  const sectionsForRegionIds = (regionIds: string[]): Section[] => {
+    if (regionIds.length === 0) {
+      return [];
+    }
+    const regionSet = new Set(regionIds);
+    return analysis.sections.filter((section) => section.execRegionId && regionSet.has(section.execRegionId));
+  };
+
   const summaries: TeensySizeSummary = {};
 
-  const flashSummary = regionSummaries.get('FLASH');
-  if (flashSummary) {
-    const flashRegion = analysis.regions.find((entry) => entry.id === 'FLASH');
-    const reservedUnused = computeReservedUnusedBytes(flashRegion, analysis.sections);
-    const flashAvailable = flashSummary.size - reservedUnused;
+  const flashGroup = resolveGroup('flash');
+  const flashBanks = groupBanks(flashGroup).length > 0
+    ? groupBanks(flashGroup)
+    : analysis.summaries.runtimeBanks.filter((bank) => bank.kind === 'flash');
 
-  // Mirrors teensy_size.c flash bucket computation for IMXRT-based boards.
-  const textHeaders = getSectionSize('.text.headers');
-    const textCode = getSectionSize('.text.code');
-    const textProgmem = getSectionSize('.text.progmem');
-    const textItcm = getSectionSize('.text.itcm');
-    const armExidx = getSectionSize('.ARM.exidx');
-    const data = getSectionSize('.data');
-    const textCsf = getSectionSize('.text.csf');
+  if (flashBanks.length > 0) {
+    const flashRegionIds = collectRegionIds(flashBanks);
+    let flashAvailable = 0;
 
-    const headers = textHeaders + textCsf;
-    const code = textCode + textItcm + armExidx;
-    const flashData = textProgmem + data;
-    const flashTotal = headers + code + flashData;
-    const freeForFiles = Math.max(flashAvailable - flashTotal, 0);
+    flashRegionIds.forEach((regionId) => {
+      const region = regionMap.get(regionId);
+      const summary = regionSummaries.get(regionId);
+      if (!region || !summary) {
+        return;
+      }
+      const reservedUnused = computeReservedUnusedBytes(region, analysis.sections);
+      flashAvailable += summary.size - reservedUnused;
+    });
 
-    summaries.flash = {
-      code,
-      data: flashData,
-      headers,
-      freeForFiles,
-    };
+    if (flashAvailable === 0) {
+      const fallback = regionSummaries.get('FLASH');
+      const fallbackRegion = regionMap.get('FLASH');
+      if (fallback && fallbackRegion) {
+        const reservedUnused = computeReservedUnusedBytes(fallbackRegion, analysis.sections);
+        flashAvailable = fallback.size - reservedUnused;
+      }
+    }
+
+    if (flashAvailable > 0) {
+      const textHeaders = getSectionSize('.text.headers');
+      const textCode = getSectionSize('.text.code');
+      const textProgmem = getSectionSize('.text.progmem');
+      const textItcm = getSectionSize('.text.itcm');
+      const armExidx = getSectionSize('.ARM.exidx');
+      const data = getSectionSize('.data');
+      const textCsf = getSectionSize('.text.csf');
+
+      const headers = textHeaders + textCsf;
+      const code = textCode + textItcm + armExidx;
+      const flashData = textProgmem + data;
+      const flashTotal = headers + code + flashData;
+      const freeForFiles = Math.max(flashAvailable - flashTotal, 0);
+
+      summaries.flash = {
+        code,
+        data: flashData,
+        headers,
+        freeForFiles,
+      };
+    }
   }
 
-  const itcmSummary = regionSummaries.get('ITCM');
-  const dtcmSummary = regionSummaries.get('DTCM');
-  if (itcmSummary && dtcmSummary) {
-    const itcmSections = analysis.sections.filter((section) => section.execRegionId === 'ITCM');
-    const dtcmSections = analysis.sections.filter((section) => section.execRegionId === 'DTCM');
+  const ram1Group = resolveGroup('ram1');
+  const ram1Banks = groupBanks(ram1Group);
+  const itcmBanks = ram1Banks.length > 0
+    ? ram1Banks.filter((bank) => collectRegionIds([bank], (region) => region.kind === 'code_ram').length > 0)
+    : analysis.summaries.runtimeBanks.filter((bank) => collectRegionIds([bank], (region) => region.kind === 'code_ram').length > 0);
+  const dtcmBanks = ram1Banks.length > 0
+    ? ram1Banks.filter((bank) => collectRegionIds([bank], (region) => region.kind === 'data_ram').length > 0)
+    : analysis.summaries.runtimeBanks.filter((bank) => collectRegionIds([bank], (region) => region.kind === 'data_ram').length > 0);
+
+  const itcmRegionIds = collectRegionIds(itcmBanks);
+  const dtcmRegionIds = collectRegionIds(dtcmBanks);
+
+  if (itcmRegionIds.length > 0 && dtcmRegionIds.length > 0) {
+    const itcmSections = sectionsForRegionIds(itcmRegionIds);
+    const dtcmSections = sectionsForRegionIds(dtcmRegionIds);
 
     const textItcm = sumSections(
       itcmSections,
@@ -317,11 +446,9 @@ const computeTeensySizeSummary = (analysis: Analysis): TeensySizeSummary => {
     const armExidx = sumSections(itcmSections, (section) => section.flags.alloc && section.name === '.ARM.exidx');
     const itcmBytes = textItcm + armExidx;
 
-  // Mirrors teensy_size.c: ITCM consumption is rounded to 32 KiB blocks before reporting.
-  const TCM_GRANULE = 32 * 1024;
-    const RAM1_TOTAL_BYTES = 512 * 1024;
-    const itcmBlocks = itcmBytes === 0 ? 0 : Math.ceil(itcmBytes / TCM_GRANULE);
-    const itcmTotal = itcmBlocks * TCM_GRANULE;
+    const TCM_GRANULE_BYTES = 32 * 1024;
+    const itcmBlocks = itcmBytes === 0 ? 0 : Math.ceil(itcmBytes / TCM_GRANULE_BYTES);
+    const itcmTotal = itcmBlocks * TCM_GRANULE_BYTES;
     const itcmPadding = itcmTotal - itcmBytes;
 
     const dtcmBytes = sumSections(
@@ -329,7 +456,12 @@ const computeTeensySizeSummary = (analysis: Analysis): TeensySizeSummary => {
       (section) => section.flags.alloc && (section.category === 'data_init' || section.category === 'bss'),
     );
 
-    const freeForLocalVariables = RAM1_TOTAL_BYTES - itcmTotal - dtcmBytes;
+    const dtcmCapacity = dtcmRegionIds.reduce((acc, regionId) => {
+      const summary = regionSummaries.get(regionId);
+      return acc + (summary?.size ?? 0);
+    }, 0);
+    const ram1Capacity = dtcmCapacity > 0 ? dtcmCapacity : 512 * 1024;
+    const freeForLocalVariables = ram1Capacity - itcmTotal - dtcmBytes;
 
     summaries.ram1 = {
       code: itcmBytes,
@@ -339,13 +471,27 @@ const computeTeensySizeSummary = (analysis: Analysis): TeensySizeSummary => {
     };
   }
 
-  const dmaSummary = regionSummaries.get('DMAMEM');
-  if (dmaSummary) {
-    const variableBytes = sumRegionCategories(dmaSummary, ['data_init', 'bss', 'dma', 'other']);
+  const ram2Group = resolveGroup('ram2');
+  const ram2Banks = groupBanks(ram2Group).length > 0
+    ? groupBanks(ram2Group)
+    : analysis.summaries.runtimeBanks.filter((bank) => collectRegionIds([bank], (region) => region.kind === 'dma_ram').length > 0);
+
+  const ram2RegionIds = collectRegionIds(ram2Banks, (region) => region.kind === 'dma_ram');
+
+  if (ram2RegionIds.length > 0) {
+    const variableBytes = ram2RegionIds.reduce((total, regionId) => {
+      const summary = regionSummaries.get(regionId);
+      return total + sumRegionCategories(summary, ['data_init', 'bss', 'dma', 'other']);
+    }, 0);
+
+    const freeForMalloc = ram2RegionIds.reduce((total, regionId) => {
+      const summary = regionSummaries.get(regionId);
+      return total + (summary?.freeForDynamic ?? 0);
+    }, 0);
 
     summaries.ram2 = {
       variables: variableBytes,
-      freeForMalloc: dmaSummary.freeForDynamic,
+      freeForMalloc,
     };
   }
 

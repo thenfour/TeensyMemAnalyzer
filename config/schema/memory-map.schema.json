@@ -77,6 +77,97 @@
                 },
                 "additionalProperties": false
             }
+        },
+        "runtimeBanks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "kind",
+                    "segments"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "flash",
+                            "ram",
+                            "external",
+                            "other"
+                        ]
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "capacityBytes": {
+                        "type": "number",
+                        "minimum": 0
+                    },
+                    "segments": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "regionId"
+                            ],
+                            "properties": {
+                                "regionId": {
+                                    "type": "string"
+                                },
+                                "start": {
+                                    "type": "number",
+                                    "minimum": 0
+                                },
+                                "size": {
+                                    "type": "number",
+                                    "minimum": 0
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "runtimeGroups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "bankIds"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "bankIds": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "additionalProperties": false
+            }
         }
     },
     "additionalProperties": false

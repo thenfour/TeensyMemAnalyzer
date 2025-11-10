@@ -21,6 +21,30 @@ export interface Region {
   reserved?: RegionReserve[];
 }
 
+export type RuntimeBankKind = 'flash' | 'ram' | 'external' | 'other';
+
+export interface RuntimeBankSegmentConfig {
+  regionId: string;
+  start?: number;
+  size?: number;
+}
+
+export interface RuntimeBankConfig {
+  id: string;
+  name: string;
+  kind: RuntimeBankKind;
+  segments: RuntimeBankSegmentConfig[];
+  description?: string;
+  capacityBytes?: number;
+}
+
+export interface RuntimeGroupConfig {
+  id: string;
+  name: string;
+  bankIds: string[];
+  description?: string;
+}
+
 export type SectionCategory =
   | 'code'
   | 'code_fast'
@@ -119,11 +143,44 @@ export interface FileOnlySummary {
   byCategory: CategorySummary[];
 }
 
+export interface RuntimeBankContributorSummary {
+  regionId: string;
+  regionName: string;
+  sizeBytes: number;
+  usedStaticBytes: number;
+  reservedBytes: number;
+}
+
+export interface RuntimeBankSummary {
+  bankId: string;
+  name: string;
+  kind: RuntimeBankKind;
+  description?: string;
+  capacityBytes: number;
+  usedStaticBytes: number;
+  reservedBytes: number;
+  freeBytes: number;
+  contributors: RuntimeBankContributorSummary[];
+}
+
+export interface RuntimeGroupSummary {
+  groupId: string;
+  name: string;
+  description?: string;
+  capacityBytes: number;
+  usedStaticBytes: number;
+  reservedBytes: number;
+  freeBytes: number;
+  bankIds: string[];
+}
+
 export interface Summaries {
   totals: TotalsSummary;
   byRegion: RegionSummary[];
   byCategory: CategorySummary[];
   fileOnly: FileOnlySummary;
+  runtimeBanks: RuntimeBankSummary[];
+  runtimeGroups: RuntimeGroupSummary[];
 }
 
 export interface Analysis {
@@ -140,6 +197,8 @@ export interface MemoryMapRegionConfig extends Region {}
 export interface MemoryMapConfig {
   targetId: string;
   regions: MemoryMapRegionConfig[];
+  runtimeBanks?: RuntimeBankConfig[];
+  runtimeGroups?: RuntimeGroupConfig[];
 }
 
 export const createEmptyAnalysis = (): Analysis => ({
@@ -172,6 +231,8 @@ export const createEmptyAnalysis = (): Analysis => ({
       totalBytes: 0,
       byCategory: [],
     },
+    runtimeBanks: [],
+    runtimeGroups: [],
   },
 });
 

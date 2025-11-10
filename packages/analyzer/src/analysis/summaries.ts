@@ -6,6 +6,11 @@ import {
   TotalsSummary,
   RegionSummary,
   FileOnlySummary,
+  RuntimeBankConfig,
+  RuntimeGroupConfig,
+  RuntimeBankSummary,
+  RuntimeGroupSummary,
+  RuntimeBankContributorSummary,
 } from '../model';
 
 const zeroTotals = (): TotalsSummary => ({
@@ -90,7 +95,16 @@ const accumulateTotals = (
 const sumReservedBytes = (region: Region): number =>
   (region.reserved ?? []).reduce((acc, reserve) => acc + reserve.size, 0);
 
-export const calculateSummaries = (regions: Region[], sections: Section[]): Summaries => {
+interface RuntimeLayoutConfig {
+  runtimeBanks?: RuntimeBankConfig[];
+  runtimeGroups?: RuntimeGroupConfig[];
+}
+
+export const calculateSummaries = (
+  regions: Region[],
+  sections: Section[],
+  runtimeLayout: RuntimeLayoutConfig = {},
+): Summaries => {
   const totals = zeroTotals();
   const globalCategoryTotals = createCategoryAccumulator();
   const fileOnlyCategoryTotals = createCategoryAccumulator();
@@ -227,10 +241,117 @@ export const calculateSummaries = (regions: Region[], sections: Section[]): Summ
     byCategory: fileOnlyByCategory,
   };
 
+  const runtimeBanks: RuntimeBankSummary[] = [];
+  const runtimeGroups: RuntimeGroupSummary[] = [];
+
+  if (runtimeLayout.runtimeBanks && runtimeLayout.runtimeBanks.length > 0) {
+    runtimeLayout.runtimeBanks.forEach((bankConfig) => {
+      const contributors: RuntimeBankContributorSummary[] = [];
+      let capacity = bankConfig.capacityBytes ?? 0;
+      let usedStatic = 0;
+      let reserved = 0;
+
+      bankConfig.segments.forEach((segment) => {
+        const segmentRegion = regionMap.get(segment.regionId);
+        const segmentSummary = regionSummaryMap.get(segment.regionId);
+        const regionSize = segmentRegion?.size ?? segmentSummary?.size ?? 0;
+        const segmentSize = segment.size ?? regionSize;
+        const regionName = segmentRegion?.name ?? segment.regionId;
+
+        if (segmentSize <= 0) {
+          return;
+        }
+
+        if (bankConfig.capacityBytes === undefined) {
+          capacity += segmentSize;
+        }
+
+        if (!segmentSummary || regionSize <= 0) {
+          contributors.push({
+            regionId: segment.regionId,
+            regionName,
+            sizeBytes: segmentSize,
+            usedStaticBytes: 0,
+            reservedBytes: 0,
+          });
+          return;
+        }
+
+        const ratio = Math.min(1, segmentSize / regionSize);
+        const segmentUsed = Math.round(segmentSummary.usedStatic * ratio);
+        const segmentReserved = Math.round(segmentSummary.reserved * ratio);
+
+        usedStatic += segmentUsed;
+        reserved += segmentReserved;
+
+        contributors.push({
+          regionId: segment.regionId,
+          regionName,
+          sizeBytes: segmentSize,
+          usedStaticBytes: segmentUsed,
+          reservedBytes: segmentReserved,
+        });
+      });
+
+      const free = Math.max(capacity - usedStatic - reserved, 0);
+
+      runtimeBanks.push({
+        bankId: bankConfig.id,
+        name: bankConfig.name,
+        kind: bankConfig.kind,
+        description: bankConfig.description,
+        capacityBytes: capacity,
+        usedStaticBytes: usedStatic,
+        reservedBytes: reserved,
+        freeBytes: free,
+        contributors,
+      });
+    });
+  }
+
+  if (runtimeLayout.runtimeGroups && runtimeLayout.runtimeGroups.length > 0) {
+    const bankSummaryMap = new Map<string, RuntimeBankSummary>();
+    runtimeBanks.forEach((bankSummary) => bankSummaryMap.set(bankSummary.bankId, bankSummary));
+
+    runtimeLayout.runtimeGroups.forEach((groupConfig) => {
+      let capacity = 0;
+      let usedStatic = 0;
+      let reserved = 0;
+
+      const existingBankIds: string[] = [];
+
+      groupConfig.bankIds.forEach((bankId) => {
+        const bank = bankSummaryMap.get(bankId);
+        if (!bank) {
+          return;
+        }
+        existingBankIds.push(bankId);
+        capacity += bank.capacityBytes;
+        usedStatic += bank.usedStaticBytes;
+        reserved += bank.reservedBytes;
+      });
+
+      const free = Math.max(capacity - usedStatic - reserved, 0);
+
+      runtimeGroups.push({
+        groupId: groupConfig.id,
+        name: groupConfig.name,
+        description: groupConfig.description,
+        capacityBytes: capacity,
+        usedStaticBytes: usedStatic,
+        reservedBytes: reserved,
+        freeBytes: free,
+        bankIds: existingBankIds,
+      });
+    });
+  }
+
   return {
     totals,
     byRegion,
     byCategory,
     fileOnly,
+    runtimeBanks,
+    runtimeGroups,
   };
 };

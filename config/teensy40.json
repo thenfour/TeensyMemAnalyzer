@@ -54,5 +54,76 @@
             "start": 538968064,
             "size": 524288
         }
+    ],
+    "runtimeBanks": [
+        {
+            "id": "flash_exec",
+            "name": "QSPI Flash Runtime",
+            "kind": "flash",
+            "description": "Executable and constant sections stored in on-board flash.",
+            "segments": [
+                {
+                    "regionId": "FLASH"
+                }
+            ]
+        },
+        {
+            "id": "ram1_itcm",
+            "name": "RAM1 ITCM",
+            "kind": "ram",
+            "description": "Instruction TCM used for FASTRUN code.",
+            "segments": [
+                {
+                    "regionId": "ITCM"
+                }
+            ]
+        },
+        {
+            "id": "ram1_dtcm",
+            "name": "RAM1 DTCM",
+            "kind": "ram",
+            "description": "Data TCM backing globals, stack, and heap.",
+            "segments": [
+                {
+                    "regionId": "DTCM"
+                }
+            ]
+        },
+        {
+            "id": "ram2_axi",
+            "name": "RAM2 (DMAMEM)",
+            "kind": "ram",
+            "description": "AXI on-chip RAM shared with DMA and large allocations.",
+            "segments": [
+                {
+                    "regionId": "DMAMEM"
+                }
+            ]
+        }
+    ],
+    "runtimeGroups": [
+        {
+            "id": "flash",
+            "name": "Flash",
+            "bankIds": [
+                "flash_exec"
+            ]
+        },
+        {
+            "id": "ram1",
+            "name": "RAM1",
+            "description": "Combined ITCM and DTCM usage at runtime.",
+            "bankIds": [
+                "ram1_itcm",
+                "ram1_dtcm"
+            ]
+        },
+        {
+            "id": "ram2",
+            "name": "RAM2",
+            "bankIds": [
+                "ram2_axi"
+            ]
+        }
     ]
 }

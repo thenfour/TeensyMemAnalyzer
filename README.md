@@ -452,7 +452,7 @@ The implementation agent should:
 
 The example firmware under `example/firmware.elf` is the same binary referenced in the
 `teensy_size` output copied into `example/readme.txt`. Running the CLI after building
-(`node packages/cli/dist/index.js --target teensy41 --elf example/firmware.elf --map example/firmware.map --toolchain-dir "C:\\Program Files (x86)\\Arm GNU Toolchain arm-none-eabi\\14.2 rel1\\bin" --json`)
+(`node packages/cli/dist/index.js --target teensy41 --elf example/firmware.elf --map example/firmware.map  --json`)
 produces totals that line up with the toolchain report once you map the categories:
 
 - Flash totals match: `flashUsed` (475,136 B) equals `teensy_size`'s
@@ -472,3 +472,47 @@ produces totals that line up with the toolchain report once you map the categori
 If a future firmware produces a real gap inside a region (for example alignment padding between
 ALLOC sections), `paddingBytes` and `largestGapBytes` in each `RegionSummary` will become non-zero
 and the CLI will print them under "Alignment padding" for that region.
+
+### Teensy-size field parity
+
+For quick spot checks we now emit a `Teensy-size fields:` block in the human-readable CLI output.
+Those values are calculated to match the
+[`teensy_size`](https://github.com/PaulStoffregen/teensy_size) utility byte-for-byte so you can
+compare results without leaving the repo. A couple of nuances are worth calling out:
+
+- `RAM1` combines ITCM and DTCM just like the reference tool. `code` is the sum of `.text.itcm`
+  plus `.ARM.exidx`, and it is rounded up to 32 KiB blocks before computing padding and free space
+  (`512 KiB total − rounded code − (.data + .bss)` equals "free for local variables").
+- `FLASH` buckets pull directly from the linker sections: `code = .text.code + .text.itcm + .ARM.exidx`,
+  `data = .text.progmem + .data`, and `headers = .text.headers + .text.csf`. The "free for files"
+  figure starts from the configured flash capacity (region size minus truly vacant reserved sectors)
+  and subtracts that total, matching the 0x1F0000 byte budget used by `teensy_size` on Teensy 4.x.
+- `FLASH` free space excludes reserved ranges that are still empty (flexspi config, IVT, recovery
+  sector). This mirrors how `teensy_size` reports "free for files" even though those sectors are
+  unavailable to user code.
+
+These rules live in the CLI presentation layer so the analyzer core stays platform-neutral. Any
+board-specific quirks should continue to be captured via the memory-map config rather than
+hard-coded logic.
+
+### One-shot build & run
+
+For a quick rebuild plus CLI execution from a PowerShell prompt you can use the helper script:
+
+```
+pwsh scripts/build.ps1 -ToolchainDir "C:\Program Files (x86)\Arm GNU Toolchain arm-none-eabi\14.2 rel1\bin" -Json
+```
+
+Parameters:
+
+- `-ToolchainDir` (optional) points at your toolchain bin directory if the `arm-none-eabi-*` tools
+  are not on `PATH`.
+- `-Target` (default `teensy41`) selects the memory-map config.
+- `-ElfPath` / `-MapPath` default to the example firmware but can be overridden per build.
+- `-Json` toggles JSON output; omit it for human-readable text.
+
+### Workspace build
+
+From the repo root, `yarn run build` already invokes `yarn workspaces run build`, so both the
+analyzer and CLI are rebuilt in one shot without the helper script. Pair it with `yarn run clean`
+when you need a fresh `dist/` output.

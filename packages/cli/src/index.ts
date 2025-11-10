@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 
 import path from 'path';
-import { analyzeBuild, AnalyzeBuildParams, Analysis, RegionSummary } from '@teensy-mem-explorer/analyzer';
+import {
+  analyzeBuild,
+  AnalyzeBuildParams,
+  Analysis,
+  Region,
+  RegionSummary,
+  Section,
+  SectionCategory,
+} from '@teensy-mem-explorer/analyzer';
 
 interface CliOptions {
   targetId?: string;
@@ -82,6 +90,195 @@ const parseArgs = (argv: string[]): CliOptions => {
 
 const formatBytes = (bytes: number): string => `${bytes} B`;
 
+const sumRegionCategories = (
+  summary: RegionSummary | undefined,
+  categories: SectionCategory[],
+): number => {
+  if (!summary) {
+    return 0;
+  }
+
+  return categories.reduce((total, category) => total + (summary.usedByCategory[category] ?? 0), 0);
+};
+
+const sumSections = (sections: Section[], predicate: (section: Section) => boolean): number =>
+  sections.reduce((total, section) => (predicate(section) ? total + section.size : total), 0);
+
+const computeReservedUnusedBytes = (region: Region | undefined, sections: Section[]): number => {
+  if (!region?.reserved?.length) {
+    return 0;
+  }
+
+  const ranges = sections.flatMap((section) => {
+    if (section.size === 0 || !section.flags.alloc) {
+      return [] as { start: number; end: number }[];
+    }
+
+    const regionRanges: { start: number; end: number }[] = [];
+
+    if (section.execRegionId === region.id && section.vmaStart !== undefined) {
+      regionRanges.push({ start: section.vmaStart, end: section.vmaStart + section.size });
+    }
+
+    const shouldTrackLoad =
+      section.loadRegionId === region.id && (section.isCopySection || section.execRegionId !== region.id);
+
+    if (shouldTrackLoad) {
+      const loadStart = section.lmaStart ?? section.vmaStart;
+      if (loadStart !== undefined) {
+        regionRanges.push({ start: loadStart, end: loadStart + section.size });
+      }
+    }
+
+    return regionRanges;
+  });
+
+  const computeOverlap = (reserveStart: number, reserveEnd: number): number => {
+    let covered = 0;
+    ranges.forEach(({ start, end }) => {
+      const overlapStart = Math.max(start, reserveStart);
+      const overlapEnd = Math.min(end, reserveEnd);
+      if (overlapEnd > overlapStart) {
+        covered += overlapEnd - overlapStart;
+      }
+    });
+    return covered;
+  };
+
+  let unused = 0;
+  region.reserved.forEach((reserve) => {
+    const reserveStart = reserve.start;
+    const reserveEnd = reserve.start + reserve.size;
+    const covered = computeOverlap(reserveStart, reserveEnd);
+    const uncovered = reserve.size - Math.min(reserve.size, covered);
+    unused += uncovered > 0 ? uncovered : 0;
+  });
+
+  return unused;
+};
+
+interface TeensySizeFlashSummary {
+  code: number;
+  data: number;
+  headers: number;
+  freeForFiles: number;
+}
+
+interface TeensySizeRam1Summary {
+  code: number;
+  variables: number;
+  padding: number;
+  freeForLocalVariables: number;
+}
+
+interface TeensySizeRam2Summary {
+  variables: number;
+  freeForMalloc: number;
+}
+
+interface TeensySizeSummary {
+  flash?: TeensySizeFlashSummary;
+  ram1?: TeensySizeRam1Summary;
+  ram2?: TeensySizeRam2Summary;
+}
+
+const createSectionSizeMap = (sections: Section[]): Map<string, number> => {
+  const map = new Map<string, number>();
+  sections.forEach((section) => {
+    const previous = map.get(section.name) ?? 0;
+    map.set(section.name, previous + section.size);
+  });
+  return map;
+};
+
+const computeTeensySizeSummary = (analysis: Analysis): TeensySizeSummary => {
+  const regionSummaries = new Map<string, RegionSummary>();
+  analysis.summaries.byRegion.forEach((summary) => {
+    regionSummaries.set(summary.regionId, summary);
+  });
+
+  const sectionSizes = createSectionSizeMap(analysis.sections);
+  const getSectionSize = (name: string): number => sectionSizes.get(name) ?? 0;
+
+  const summaries: TeensySizeSummary = {};
+
+  const flashSummary = regionSummaries.get('FLASH');
+  if (flashSummary) {
+    const flashRegion = analysis.regions.find((entry) => entry.id === 'FLASH');
+    const reservedUnused = computeReservedUnusedBytes(flashRegion, analysis.sections);
+    const flashAvailable = flashSummary.size - reservedUnused;
+
+  // Mirrors teensy_size.c flash bucket computation for IMXRT-based boards.
+  const textHeaders = getSectionSize('.text.headers');
+    const textCode = getSectionSize('.text.code');
+    const textProgmem = getSectionSize('.text.progmem');
+    const textItcm = getSectionSize('.text.itcm');
+    const armExidx = getSectionSize('.ARM.exidx');
+    const data = getSectionSize('.data');
+    const textCsf = getSectionSize('.text.csf');
+
+    const headers = textHeaders + textCsf;
+    const code = textCode + textItcm + armExidx;
+    const flashData = textProgmem + data;
+    const flashTotal = headers + code + flashData;
+    const freeForFiles = Math.max(flashAvailable - flashTotal, 0);
+
+    summaries.flash = {
+      code,
+      data: flashData,
+      headers,
+      freeForFiles,
+    };
+  }
+
+  const itcmSummary = regionSummaries.get('ITCM');
+  const dtcmSummary = regionSummaries.get('DTCM');
+  if (itcmSummary && dtcmSummary) {
+    const itcmSections = analysis.sections.filter((section) => section.execRegionId === 'ITCM');
+    const dtcmSections = analysis.sections.filter((section) => section.execRegionId === 'DTCM');
+
+    const textItcm = sumSections(
+      itcmSections,
+      (section) => section.flags.alloc && (section.category === 'code' || section.category === 'code_fast'),
+    );
+    const armExidx = sumSections(itcmSections, (section) => section.flags.alloc && section.name === '.ARM.exidx');
+    const itcmBytes = textItcm + armExidx;
+
+  // Mirrors teensy_size.c: ITCM consumption is rounded to 32 KiB blocks before reporting.
+  const TCM_GRANULE = 32 * 1024;
+    const RAM1_TOTAL_BYTES = 512 * 1024;
+    const itcmBlocks = itcmBytes === 0 ? 0 : Math.ceil(itcmBytes / TCM_GRANULE);
+    const itcmTotal = itcmBlocks * TCM_GRANULE;
+    const itcmPadding = itcmTotal - itcmBytes;
+
+    const dtcmBytes = sumSections(
+      dtcmSections,
+      (section) => section.flags.alloc && (section.category === 'data_init' || section.category === 'bss'),
+    );
+
+    const freeForLocalVariables = RAM1_TOTAL_BYTES - itcmTotal - dtcmBytes;
+
+    summaries.ram1 = {
+      code: itcmBytes,
+      variables: dtcmBytes,
+      padding: itcmPadding > 0 ? itcmPadding : 0,
+      freeForLocalVariables,
+    };
+  }
+
+  const dmaSummary = regionSummaries.get('DMAMEM');
+  if (dmaSummary) {
+    const variableBytes = sumRegionCategories(dmaSummary, ['data_init', 'bss', 'dma', 'other']);
+
+    summaries.ram2 = {
+      variables: variableBytes,
+      freeForMalloc: dmaSummary.freeForDynamic,
+    };
+  }
+
+  return summaries;
+};
+
 const printRegionSummary = (regionSummary: RegionSummary, analysis: Analysis): void => {
   const region = analysis.regions.find((entry) => entry.id === regionSummary.regionId);
   if (!region) {
@@ -130,6 +327,35 @@ const printAnalysis = (analysis: Analysis): void => {
 
   if (analysis.summaries.fileOnly.totalBytes > 0) {
     console.log(`  File-only (non-alloc): ${formatBytes(analysis.summaries.fileOnly.totalBytes)}`);
+  }
+
+  const teensySizeSummary = computeTeensySizeSummary(analysis);
+  if (teensySizeSummary.flash || teensySizeSummary.ram1 || teensySizeSummary.ram2) {
+    console.log('\nTeensy-size fields:');
+    if (teensySizeSummary.flash) {
+      const flash = teensySizeSummary.flash;
+      console.log(
+        `  FLASH: code ${formatBytes(flash.code)}, data ${formatBytes(flash.data)}, headers ${formatBytes(
+          flash.headers,
+        )}  free for files: ${formatBytes(flash.freeForFiles)}`,
+      );
+    }
+
+    if (teensySizeSummary.ram1) {
+      const ram1 = teensySizeSummary.ram1;
+      console.log(
+        `  RAM1: variables ${formatBytes(ram1.variables)}, code ${formatBytes(ram1.code)}, padding ${formatBytes(
+          ram1.padding,
+        )}  free for local variables: ${formatBytes(ram1.freeForLocalVariables)}`,
+      );
+    }
+
+    if (teensySizeSummary.ram2) {
+      const ram2 = teensySizeSummary.ram2;
+      console.log(
+        `  RAM2: variables ${formatBytes(ram2.variables)}  free for malloc/new: ${formatBytes(ram2.freeForMalloc)}`,
+      );
+    }
   }
 
   analysis.summaries.byRegion.forEach((regionSummary) => {

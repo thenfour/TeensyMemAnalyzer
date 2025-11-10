@@ -428,10 +428,13 @@ This is a suggested high-level structure. The coding agent should implement with
 
 1. Developer builds firmware (e.g. via PlatformIO/Teensy).
 2. Developer runs CLI:
-   - `teensy-mem-explorer analyze path/to/firmware.elf --target teensy41`
+  - `yarn workspace @teensy-mem-explorer/cli teensy-mem-explorer --target teensy41 --elf path/to/firmware.elf`
+  - Add `--map path/to/firmware.map` for optional map file context.
+  - Provide `--toolchain-dir` if `arm-none-eabi-*` tools are not on `PATH`.
+  - Append `--json` to emit the full analysis model as JSON.
 3. CLI:
-   - Uses `analyzer` to parse ELF/MAP and memory map config.
-   - Outputs summary to console and/or writes JSON.
+  - Uses `analyzer` to parse ELF/MAP and memory map config.
+  - Outputs region summaries, totals, and top symbols; or emits JSON when requested.
 4. UI:
    - Loads the generated analysis (directly via library or via JSON).
    - Presents interactive visualization and search.

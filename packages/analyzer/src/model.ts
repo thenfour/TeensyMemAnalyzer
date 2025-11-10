@@ -162,3 +162,11 @@ export const createEmptyAnalysis = (): Analysis => ({
     byCategory: [],
   },
 });
+
+export interface AnalyzeBuildParams {
+  elfPath: string;
+  mapPath?: string;
+  targetId: string;
+  toolchainPrefix?: string;
+  toolchainDir?: string;
+}

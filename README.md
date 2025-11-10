@@ -5,6 +5,46 @@ configurations focused on **Teensy 4.x** targets.
 
 ---
 
+## Terminology
+
+Understanding how the analyzer names things helps when jumping between the CLI, configs, and
+viewer panels.
+
+- **Source artifacts (ELF/MAP)**
+  - `Section`: Raw sections extracted from the ELF (e.g. `.text.code`, `.bss`). They know their
+    virtual/load addresses but no higher-level context.
+  - `Symbol`: Named ranges inside sections. Symbols inherit the region assigned to their parent
+    section once analysis finishes.
+- **Logical memory map (`config/*.json`)**
+  - `Region`: A contiguous address range on the MCU (FLASH, ITCM, DTCM, DMAMEM, …). Regions describe
+    start, size, and optional reserved sub-ranges that cannot be used by the linker.
+  - `Reserved range`: A named carve-out inside a region that reduces its usable capacity (boot
+    headers, trap words, etc.).
+- **Runtime layout (also in the config)**
+  - `Runtime bank`: A pool the firmware allocates from at runtime. Example: `ram1_itcm` in
+    `config/teensy40.json` sources bytes from the `ITCM` region and represents the instructions that
+    land in tightly-coupled RAM. Banks can override their capacity when the usable runtime pool is
+    smaller than the raw region slice.
+  - `Segment`: A bank entry that references a region (and optional start/size slice). Example: the
+    `ram2_axi` bank has a single segment pointing at the `DMAMEM` region; other boards can split a
+    region into multiple segments to constrain a bank to a subrange.
+  - `Runtime group`: A higher-level rollup of banks that behave as a shared pool (e.g. `ram1`
+    combines `ram1_itcm` and `ram1_dtcm`). Groups can expose a shared capacity hint so UI and reports
+    cap the total instead of naively summing member banks.
+- **Analysis output (`analysis.json`)**
+  - `summaries.byRegion`: Usage per region after sections/symbols are mapped.
+  - `summaries.runtimeBanks`: Usage per runtime bank, including contributor details.
+  - `summaries.runtimeGroups`: Aggregated usage per runtime group, carrying the member bank IDs.
+  - `reporting.teensySize`: Stored copy of the report config. The viewer uses shared-capacity hints
+    here to mirror `teensy_size` totals (e.g. `ram1.sharedCapacityBytes = 524288` for Teensy 4.0).
+- **Viewer cards**
+  - *Regions*: Shows per-region usage and occupied address ranges straight from `byRegion` plus
+    section-derived spans.
+  - *Runtime Banks*: By default renders `runtimeGroups` so Flash/RAM1/RAM2 totals match
+    `teensy_size`. If a target defines no groups, it falls back to the raw banks list.
+
+---
+
 ## Key Capabilities
 - Parse ELF (and optional MAP) files and map every section & symbol into logical memory regions.
 - Summarize flash and RAM usage by region and category, including reserved ranges and free space.

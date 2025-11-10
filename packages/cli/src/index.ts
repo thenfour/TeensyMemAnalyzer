@@ -5,11 +5,13 @@ import {
   analyzeBuild,
   AnalyzeBuildParams,
   Analysis,
+  SourceLocation,
   Symbol as AnalysisSymbol,
   Region,
   RegionSummary,
   Section,
   SectionCategory,
+  resolveSymbolSource,
 } from '@teensy-mem-explorer/analyzer';
 
 interface CliOptions {
@@ -104,6 +106,51 @@ const sumRegionCategories = (
 
 const sumSections = (sections: Section[], predicate: (section: Section) => boolean): number =>
   sections.reduce((total, section) => (predicate(section) ? total + section.size : total), 0);
+
+type SymbolSourceLookup = (symbol: AnalysisSymbol) => Promise<SourceLocation | undefined>;
+
+interface SourceLookupOptions {
+  toolchainDir?: string;
+  toolchainPrefix?: string;
+}
+
+const createSymbolSourceLookup = (analysis: Analysis, options: SourceLookupOptions): SymbolSourceLookup => {
+  const cache = new Map<string, Promise<SourceLocation | undefined>>();
+
+  return async (symbol: AnalysisSymbol): Promise<SourceLocation | undefined> => {
+    if (symbol.source) {
+      return symbol.source;
+    }
+
+    const cached = cache.get(symbol.id);
+    if (cached) {
+      return cached;
+    }
+
+    const lookupPromise = resolveSymbolSource({
+      analysis,
+      symbol,
+      toolchainDir: options.toolchainDir,
+      toolchainPrefix: options.toolchainPrefix,
+    }).catch(() => undefined);
+
+    cache.set(symbol.id, lookupPromise);
+    return lookupPromise;
+  };
+};
+
+const formatSourceLocationSuffix = (location: SourceLocation | undefined): string => {
+  if (!location) {
+    return '';
+  }
+
+  const basePath = path.isAbsolute(location.file)
+    ? path.relative(process.cwd(), location.file) || location.file
+    : location.file;
+
+  const normalizedPath = basePath.replace(/\\/g, '/');
+  return `  [${normalizedPath}:${location.line}]`;
+};
 
 const computeReservedUnusedBytes = (region: Region | undefined, sections: Section[]): number => {
   if (!region?.reserved?.length) {
@@ -305,11 +352,12 @@ const computeTeensySizeSummary = (analysis: Analysis): TeensySizeSummary => {
   return summaries;
 };
 
-const printRegionSummary = (
+const printRegionSummary = async (
   regionSummary: RegionSummary,
   analysis: Analysis,
   topSymbols: AnalysisSymbol[],
-): void => {
+  lookupSource: SymbolSourceLookup,
+): Promise<void> => {
   const region = analysis.regions.find((entry) => entry.id === regionSummary.regionId);
   if (!region) {
     return;
@@ -338,16 +386,21 @@ const printRegionSummary = (
 
   if (topSymbols.length > 0) {
     console.log('  Worst offenders:');
+    const locations = await Promise.all(topSymbols.map((symbol) => lookupSource(symbol)));
     topSymbols.forEach((symbol, index) => {
       const rankLabel = `${index + 1}.`;
+      const locationSuffix = formatSourceLocationSuffix(locations[index]);
       console.log(
-        `    ${rankLabel.padEnd(4)}${formatBytes(symbol.size).padStart(10)}  ${symbol.name}`,
+        `    ${rankLabel.padEnd(4)}${formatBytes(symbol.size).padStart(10)}  ${symbol.name}${locationSuffix}`,
       );
     });
   }
 };
 
-const printAnalysis = (analysis: Analysis): void => {
+const printAnalysis = async (
+  analysis: Analysis,
+  lookupSource: SymbolSourceLookup,
+): Promise<void> => {
   console.log(`Target: ${analysis.target.name}`);
   console.log(`ELF:    ${analysis.build.elfPath}`);
   if (analysis.build.mapPath) {
@@ -400,10 +453,10 @@ const printAnalysis = (analysis: Analysis): void => {
 
   const topSymbolsByRegion = computeTopSymbolsByRegion(analysis.symbols, 3);
 
-  analysis.summaries.byRegion.forEach((regionSummary) => {
+  for (const regionSummary of analysis.summaries.byRegion) {
     const offenders = topSymbolsByRegion.get(regionSummary.regionId) ?? [];
-    printRegionSummary(regionSummary, analysis, offenders);
-  });
+    await printRegionSummary(regionSummary, analysis, offenders, lookupSource);
+  }
 
   console.log('\nTop symbols (region id) by size:');
   const topSymbols = [...analysis.symbols]
@@ -411,11 +464,12 @@ const printAnalysis = (analysis: Analysis): void => {
     .sort((a, b) => b.size - a.size)
     .slice(0, 10);
 
-  topSymbols.forEach((symbol) => {
+  for (const symbol of topSymbols) {
+    const locationSuffix = formatSourceLocationSuffix(await lookupSource(symbol));
     console.log(
-      `  ${formatBytes(symbol.size).padStart(10)}  ${symbol.name}  (${symbol.regionId ?? 'unknown'})`,
+      `  ${formatBytes(symbol.size).padStart(10)}  ${symbol.name}  (${symbol.regionId ?? 'unknown'})${locationSuffix}`,
     );
-  });
+  }
 };
 
 const main = async (): Promise<void> => {
@@ -442,10 +496,15 @@ const main = async (): Promise<void> => {
 
     const analysis = await analyzeBuild(params);
 
+    const lookupSource = createSymbolSourceLookup(analysis, {
+      toolchainDir,
+      toolchainPrefix,
+    });
+
     if (outputFormat === 'json') {
       console.log(JSON.stringify(analysis, null, 2));
     } else {
-      printAnalysis(analysis);
+      await printAnalysis(analysis, lookupSource);
     }
   } catch (error) {
     console.error(`Error: ${(error as Error).message}`);

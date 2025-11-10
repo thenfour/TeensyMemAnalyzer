@@ -114,6 +114,126 @@ header>p {
     color: #475569;
 }
 
+.summary-card {
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.summary-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.summary-header h2 {
+    margin: 0;
+}
+
+.summary-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    font-size: 0.95rem;
+    color: #475569;
+    flex-wrap: wrap;
+}
+
+.summary-state {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.summary-updated {
+    font-size: 0.9rem;
+    color: #64748b;
+}
+
+.summary-placeholder {
+    margin: 0;
+    color: #475569;
+}
+
+.usage-grid {
+    display: grid;
+    gap: 1rem 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.usage-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.usage-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+}
+
+.usage-label {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.usage-values {
+    font-size: 0.9rem;
+    color: #475569;
+}
+
+.usage-bar {
+    position: relative;
+    height: 12px;
+    background-color: #e2e8f0;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.usage-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    background-image: linear-gradient(90deg, #2563eb, #3b82f6);
+    border-radius: inherit;
+}
+
+.usage-description {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #475569;
+}
+
+.usage-free {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #0f172a;
+    font-weight: 600;
+}
+
+.summary-footnotes {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.summary-pill {
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    background-color: #dcfce7;
+    color: #166534;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
 .config-card {
     background-color: #ffffff;
     border-radius: 8px;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Analysis } from '@teensy-mem-explorer/analyzer';
+import type { Analysis, Region, RegionSummary, TotalsSummary } from '@teensy-mem-explorer/analyzer';
 import type { HealthResponse, ServerConfig, ServerMessage, ServerStatusPayload } from './shared/protocol';
 
 const formatBytes = (value: number | undefined): string => {
@@ -14,6 +14,17 @@ const formatBytes = (value: number | undefined): string => {
     }
     return `${value} B`;
 };
+
+const computeUsagePercent = (used: number | undefined, total: number | undefined): number | null => {
+    if (used === undefined || total === undefined || total === 0) {
+        return null;
+    }
+    return Math.min(100, Math.max(0, (used / total) * 100));
+};
+
+const mapRegionById = (regions: Region[], id: string): Region | undefined => regions.find((region) => region.id === id);
+const mapRegionSummaryById = (summaries: RegionSummary[], id: string): RegionSummary | undefined =>
+    summaries.find((summary) => summary.regionId === id);
 
 const App = (): JSX.Element => {
     const [analysisSummary, setAnalysisSummary] = useState<string | null>(null);
@@ -118,13 +129,12 @@ const App = (): JSX.Element => {
                         setLatestAnalysis(message.payload.analysis);
 
                         const totals = message.payload.analysis.summaries?.totals;
-                        if (totals) {
-                            setAnalysisSummary(
-                                `Server analysis (${message.payload.analysis.target.name}) — Flash ${formatBytes(
-                                    totals.flashUsed,
-                                )}, RAM ${formatBytes(totals.ramUsed)}`,
-                            );
-                        }
+                        const summaryText = totals
+                            ? `Server analysis (${message.payload.analysis.target.name}) — Flash ${formatBytes(
+                                totals.flashUsed,
+                            )}, RAM ${formatBytes(totals.ramUsed)}`
+                            : `Server analysis (${message.payload.analysis.target.name}) loaded.`;
+                        setAnalysisSummary(summaryText);
                     }
                 } catch (error) {
                     console.warn('Failed to parse server message', error);
@@ -242,6 +252,91 @@ const App = (): JSX.Element => {
     const configReady = Boolean(pendingConfig.targetId && pendingConfig.elfPath);
     const isRunDisabled =
         connectionState !== 'connected' || isTriggeringRun || serverStatus?.state === 'running' || !configReady;
+
+    const usageSummaries = useMemo(() => {
+        if (!latestAnalysis) {
+            return null;
+        }
+
+        const totals: TotalsSummary = latestAnalysis.summaries.totals;
+
+        const flashRegion = mapRegionById(latestAnalysis.regions, 'FLASH');
+        const itcmRegion = mapRegionById(latestAnalysis.regions, 'ITCM');
+        const dtcmRegion = mapRegionById(latestAnalysis.regions, 'DTCM');
+        const dmaRegion = mapRegionById(latestAnalysis.regions, 'DMAMEM');
+
+        const flashSummary = mapRegionSummaryById(latestAnalysis.summaries.byRegion, 'FLASH');
+        const itcmSummary = mapRegionSummaryById(latestAnalysis.summaries.byRegion, 'ITCM');
+        const dtcmSummary = mapRegionSummaryById(latestAnalysis.summaries.byRegion, 'DTCM');
+        const dmaSummary = mapRegionSummaryById(latestAnalysis.summaries.byRegion, 'DMAMEM');
+
+        return {
+            flash: {
+                used: totals.flashUsed,
+                total: flashSummary?.size ?? flashRegion?.size,
+                percent: computeUsagePercent(totals.flashUsed, flashSummary?.size ?? flashRegion?.size),
+                free: flashSummary ? Math.max(flashSummary.size - flashSummary.usedStatic, 0) : undefined,
+                description: `Code and constants in program flash. File-only sections: ${formatBytes(
+                    latestAnalysis.summaries.fileOnly.totalBytes,
+                )}.`,
+            },
+            ramCode: {
+                used: totals.ramCode,
+                total: itcmSummary?.size ?? itcmRegion?.size,
+                percent: computeUsagePercent(totals.ramCode, itcmSummary?.size ?? itcmRegion?.size),
+                free: itcmSummary ? Math.max(itcmSummary.size - itcmSummary.usedStatic, 0) : undefined,
+                description: 'Executable code residing in ITCM.',
+            },
+            ramData: {
+                used: totals.ramDataInit + totals.ramBss,
+                total: dtcmSummary?.size ?? dtcmRegion?.size,
+                percent: computeUsagePercent(totals.ramDataInit + totals.ramBss, dtcmSummary?.size ?? dtcmRegion?.size),
+                free: dtcmSummary ? Math.max(dtcmSummary.size - dtcmSummary.usedStatic, 0) : undefined,
+                description: 'Globals and BSS in tightly coupled RAM.',
+            },
+            ramDma: {
+                used: totals.ramDma,
+                total: dmaSummary?.size ?? dmaRegion?.size,
+                percent: computeUsagePercent(totals.ramDma, dmaSummary?.size ?? dmaRegion?.size),
+                free: dmaSummary ? Math.max(dmaSummary.size - dmaSummary.usedStatic, 0) : undefined,
+                description: 'DMAMEM available to DMA engines and allocators.',
+            },
+        };
+    }, [latestAnalysis]);
+
+    const renderUsageBar = (
+        label: string,
+        summary: {
+            used: number | undefined;
+            total: number | undefined;
+            percent: number | null;
+            description?: string;
+        } | null,
+    ): JSX.Element => {
+        const percent = summary?.percent ?? null;
+        const usedLabel = formatBytes(summary?.used);
+        const totalLabel = formatBytes(summary?.total);
+
+        return (
+            <div className="usage-item">
+                <div className="usage-header">
+                    <span className="usage-label">{label}</span>
+                    <span className="usage-values">
+                        {usedLabel} / {totalLabel}
+                        {percent !== null ? ` (${percent.toFixed(1)}%)` : ''}
+                    </span>
+                </div>
+                <div className="usage-bar">
+                    <div className="usage-bar-fill" style={{ width: percent !== null ? `${percent}%` : '0%' }} />
+                </div>
+                {summary?.description ? <p className="usage-description">{summary.description}</p> : null}
+            </div>
+        );
+    };
+
+    const lastRunCompletedAt = serverStatus?.lastRunCompletedAt
+        ? new Date(serverStatus.lastRunCompletedAt)
+        : null;
 
     return (
         <div className="app-root">
@@ -408,6 +503,35 @@ const App = (): JSX.Element => {
                     <input type="file" accept="application/json" onChange={handleFileChange} />
                 </label>
                 {analysisSummary ? <p className="summary">{analysisSummary}</p> : <p>No analysis loaded yet.</p>}
+
+
+                <section className="summary-card">
+                    <div className="summary-header">
+                        <h2>Usage Overview</h2>
+                        <div className="summary-meta">
+                            <span className="summary-state">{statusLabel}</span>
+                            {lastRunCompletedAt ? (
+                                <span className="summary-updated">Updated {lastRunCompletedAt.toLocaleString()}</span>
+                            ) : (
+                                <span className="summary-updated">Awaiting first analysis</span>
+                            )}
+                        </div>
+                    </div>
+                    {usageSummaries ? (
+                        <>
+                            <div className="usage-grid">
+                                {renderUsageBar('Flash', usageSummaries.flash)}
+                                {renderUsageBar('RAM (code)', usageSummaries.ramCode)}
+                                {renderUsageBar('RAM (data)', usageSummaries.ramData)}
+                                {renderUsageBar('RAM (DMA)', usageSummaries.ramDma)}
+                            </div>
+                        </>
+                    ) : (
+                        <p className="summary-placeholder">Run an analysis to populate memory usage.</p>
+                    )}
+                </section>
+
+
                 <section className="placeholder-grid">
                     <div className="panel">
                         <h2>Memory Map</h2>

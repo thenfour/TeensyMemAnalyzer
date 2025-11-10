@@ -359,6 +359,14 @@ These advanced features rely on the robustness and clarity of the initial analys
   - Ecosystem support for charts, treemaps, tables.
   - Code reuse between web and Electron/Tauri builds.
 
+**Package manager**
+
+Yarn is preferred.
+
+**IDE**
+
+VS Code shall be used as the primary dev tool, with additional support as needed via cmd.
+
 **External Tools**
 
 - Use existing `arm-none-eabi-*` tools where practical:

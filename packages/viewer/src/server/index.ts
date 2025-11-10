@@ -1,6 +1,6 @@
-import http from 'http';
 import express, { type Request, type Response } from 'express';
-import { WebSocketServer, WebSocket } from 'ws';
+import http from 'http';
+import { WebSocket, WebSocketServer } from 'ws';
 import type { ServerConfig, ServerMessage, ServerStatusPayload } from '../shared/protocol';
 
 const DEFAULT_PORT = Number.parseInt(process.env.TME_VIEWER_PORT ?? '5317', 10);
@@ -12,6 +12,12 @@ app.use(express.json());
 let currentStatus: ServerStatusPayload = { state: 'idle' };
 let activeConfig: ServerConfig = {
   debounceMs: 1500,
+  autoRun: true,
+  targetId: "teensy40",
+    elfPath: "C:\\root\\git\\thenfour\\Clarinoid\\projects\\CLARINOID2\\.pio\\build\\teensy\\firmware.elf",
+    mapPath: "C:\\root\\git\\thenfour\\Clarinoid\\projects\\CLARINOID2\\.pio\\build\\teensy\\firmware.map",
+    toolchainDir: "C:\\Users\\carl\\.platformio\\packages\\toolchain-gccarmnoneeabi-teensy\\bin",
+    toolchainPrefix: "arm-none-eabi-",
 };
 
 const server = http.createServer(app);
@@ -28,12 +34,23 @@ const broadcastStatus = (): void => {
   });
 };
 
+const broadcastConfig = (): void => {
+  const message: ServerMessage = { type: 'config', payload: activeConfig };
+  const encoded = JSON.stringify(message);
+  sockets.forEach((socket) => {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(encoded);
+    }
+  });
+};
+
 wss.on('connection', (socket) => {
   sockets.add(socket);
 
   const hello: ServerMessage = { type: 'hello', payload: { message: 'viewer connected' } };
   socket.send(JSON.stringify(hello));
   socket.send(JSON.stringify({ type: 'status', payload: currentStatus } satisfies ServerMessage));
+  socket.send(JSON.stringify({ type: 'config', payload: activeConfig } satisfies ServerMessage));
 
   socket.on('close', () => {
     sockets.delete(socket);
@@ -66,6 +83,7 @@ app.put('/api/config', (req: Request, res: Response) => {
   };
 
   res.json({ config: activeConfig });
+  broadcastConfig();
 });
 
 app.post('/api/run', (_req: Request, res: Response) => {

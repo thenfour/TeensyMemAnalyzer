@@ -86,6 +86,99 @@ header>p {
     color: #991b1b;
 }
 
+.config-card {
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.config-card h2 {
+    margin-top: 0;
+}
+
+.config-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.config-grid {
+    display: grid;
+    gap: 1rem 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.config-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.config-grid input[type='text'],
+.config-grid input[type='number'] {
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    font-size: 0.95rem;
+    color: #0f172a;
+    background-color: #f8fafc;
+}
+
+.config-grid input:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 1px;
+}
+
+.toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.toggle input[type='checkbox'] {
+    width: 1.1rem;
+    height: 1.1rem;
+}
+
+.config-error {
+    background-color: #fee2e2;
+    border-left: 4px solid #dc2626;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    color: #991b1b;
+}
+
+.config-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.config-actions button {
+    padding: 0.55rem 1.2rem;
+    border-radius: 6px;
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+    background-color: #2563eb;
+    color: #f8fafc;
+}
+
+.config-actions button:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+.config-actions button.secondary {
+    background-color: #e2e8f0;
+    color: #1f2933;
+}
+
 .chip {
     display: inline-block;
     padding: 0.25rem 0.75rem;

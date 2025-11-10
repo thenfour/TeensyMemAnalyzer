@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { HealthResponse, ServerMessage, ServerStatusPayload } from './shared/protocol';
+import type { HealthResponse, ServerConfig, ServerMessage, ServerStatusPayload } from './shared/protocol';
 
 const App = (): JSX.Element => {
     const [analysisSummary, setAnalysisSummary] = useState<string | null>(null);
@@ -9,6 +9,12 @@ const App = (): JSX.Element => {
         'connecting',
     );
     const [connectionError, setConnectionError] = useState<string | null>(null);
+    const [config, setConfig] = useState<ServerConfig>({
+    });
+    const [pendingConfig, setPendingConfig] = useState<ServerConfig>({
+    });
+    const [isSavingConfig, setIsSavingConfig] = useState(false);
+    const [configError, setConfigError] = useState<string | null>(null);
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
         const file = event.target.files?.[0];
@@ -42,6 +48,7 @@ const App = (): JSX.Element => {
                 if (isMounted) {
                     setHealth(data);
                     setServerStatus(data.state);
+                    // Config will arrive via websocket handshake; if not, keep pending empty.
                     setConnectionState('connected');
                 }
             } catch (error) {
@@ -59,6 +66,10 @@ const App = (): JSX.Element => {
             isMounted = false;
         };
     }, []);
+
+    useEffect(() => {
+        setPendingConfig(config ? { ...config } : {});
+    }, [config]);
 
     useEffect(() => {
         let socket: WebSocket | null = null;
@@ -83,6 +94,9 @@ const App = (): JSX.Element => {
                     const message = JSON.parse(event.data) as ServerMessage;
                     if (message.type === 'status') {
                         setServerStatus(message.payload);
+                    } else if (message.type === 'config') {
+                        setConfig(message.payload ?? {});
+                        setPendingConfig(message.payload ?? {});
                     }
                 } catch (error) {
                     console.warn('Failed to parse server message', error);
@@ -129,6 +143,51 @@ const App = (): JSX.Element => {
         }
     }, [serverStatus]);
 
+    const handleConfigInputChange = <K extends keyof ServerConfig>(key: K, value: ServerConfig[K]): void => {
+        const sanitizedValue =
+            typeof value === 'number' && Number.isNaN(value)
+                ? undefined
+                : ((value === '' ? undefined : value) as ServerConfig[K] | undefined);
+
+        setPendingConfig((prev) => {
+            const next = { ...prev };
+            if (sanitizedValue === undefined) {
+                delete next[key];
+            } else {
+                next[key] = sanitizedValue;
+            }
+            return next;
+        });
+    };
+
+    const handleConfigSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+        event.preventDefault();
+        setIsSavingConfig(true);
+        setConfigError(null);
+
+        try {
+            const response = await fetch('/api/config', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(pendingConfig),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Config update failed with status ${response.status}`);
+            }
+
+            const data = (await response.json()) as { config: ServerConfig };
+            setConfig(data.config);
+            setPendingConfig(data.config);
+        } catch (error) {
+            setConfigError(error instanceof Error ? error.message : 'Failed to update config');
+        } finally {
+            setIsSavingConfig(false);
+        }
+    };
+
     return (
         <div className="app-root">
             <header>
@@ -163,6 +222,96 @@ const App = (): JSX.Element => {
                             <div className="status-error">{connectionError}</div>
                         )}
                     </dl>
+                </section>
+
+                <section className="config-card">
+                    <h2>Watch Configuration</h2>
+                    <form onSubmit={handleConfigSubmit} className="config-form">
+                        <div className="config-grid">
+                            <label>
+                                <span>Target ID</span>
+                                <input
+                                    type="text"
+                                    placeholder="teensy40"
+                                    value={pendingConfig.targetId ?? ''}
+                                    onChange={(event) => handleConfigInputChange('targetId', event.target.value)}
+                                />
+                            </label>
+                            <label>
+                                <span>ELF Path</span>
+                                <input
+                                    type="text"
+                                    placeholder="C:\\path\\to\\firmware.elf"
+                                    value={pendingConfig.elfPath ?? ''}
+                                    onChange={(event) => handleConfigInputChange('elfPath', event.target.value)}
+                                />
+                            </label>
+                            <label>
+                                <span>MAP Path</span>
+                                <input
+                                    type="text"
+                                    placeholder="C:\\path\\to\\firmware.map"
+                                    value={pendingConfig.mapPath ?? ''}
+                                    onChange={(event) => handleConfigInputChange('mapPath', event.target.value)}
+                                />
+                            </label>
+                            <label>
+                                <span>Toolchain Directory</span>
+                                <input
+                                    type="text"
+                                    placeholder="C:\\.platformio\\toolchain\\bin"
+                                    value={pendingConfig.toolchainDir ?? ''}
+                                    onChange={(event) => handleConfigInputChange('toolchainDir', event.target.value)}
+                                />
+                            </label>
+                            <label>
+                                <span>Toolchain Prefix</span>
+                                <input
+                                    type="text"
+                                    placeholder="arm-none-eabi-"
+                                    value={pendingConfig.toolchainPrefix ?? ''}
+                                    onChange={(event) => handleConfigInputChange('toolchainPrefix', event.target.value)}
+                                />
+                            </label>
+                            <label>
+                                <span>Debounce (ms)</span>
+                                <input
+                                    type="number"
+                                    min={250}
+                                    step={250}
+                                    value={pendingConfig.debounceMs ?? 1500}
+                                    onChange={(event) =>
+                                        handleConfigInputChange('debounceMs', Number.parseInt(event.target.value, 10))
+                                    }
+                                />
+                            </label>
+                        </div>
+
+                        <label className="toggle">
+                            <input
+                                type="checkbox"
+                                checked={pendingConfig.autoRun ?? false}
+                                onChange={(event) => handleConfigInputChange('autoRun', event.target.checked)}
+                            />
+                            <span>Automatically run analysis when files change</span>
+                        </label>
+
+                        {configError && <p className="config-error">{configError}</p>}
+
+                        <div className="config-actions">
+                            <button type="submit" disabled={isSavingConfig}>
+                                {isSavingConfig ? 'Saving…' : 'Save Configuration'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setPendingConfig(config)}
+                                disabled={isSavingConfig}
+                                className="secondary"
+                            >
+                                Reset
+                            </button>
+                        </div>
+                    </form>
                 </section>
 
                 <label className="uploader">

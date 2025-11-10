@@ -21,8 +21,10 @@ export interface ServerConfig {
   toolchainDir?: string;
   toolchainPrefix?: string;
   debounceMs?: number;
+  autoRun?: boolean;
 }
 
 export type ServerMessage =
   | { type: 'status'; payload: ServerStatusPayload }
-  | { type: 'hello'; payload: { message: string } };
+  | { type: 'hello'; payload: { message: string } }
+  | { type: 'config'; payload: ServerConfig };

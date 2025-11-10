@@ -14,19 +14,7 @@ import type {
     ServerMessage,
     ServerStatusPayload,
 } from './shared/protocol';
-
-const formatBytes = (value: number | undefined): string => {
-    if (value === undefined || Number.isNaN(value)) {
-        return '—';
-    }
-    if (value >= 1024 * 1024) {
-        return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
-    }
-    if (value >= 1024) {
-        return `${(value / 1024).toFixed(1)} KiB`;
-    }
-    return `${value} B`;
-};
+import { SizeValue, useSizeFormat } from './components/SizeValue';
 
 const computeUsagePercent = (used: number | undefined, total: number | undefined): number | null => {
     if (used === undefined || total === undefined || total === 0) {
@@ -94,8 +82,21 @@ const TOP_LEVEL_GROUPS: TopLevelGroup[] = [
     },
 ];
 
+type AnalysisSummaryState =
+    | {
+        kind: 'server';
+        targetName: string;
+        flashUsed?: number;
+        ramUsed?: number;
+    }
+    | {
+        kind: 'manual';
+        message: string;
+    };
+
 const App = (): JSX.Element => {
-    const [analysisSummary, setAnalysisSummary] = useState<string | null>(null);
+    const { formatValue } = useSizeFormat();
+    const [analysisSummary, setAnalysisSummary] = useState<AnalysisSummaryState | null>(null);
     const [health, setHealth] = useState<HealthResponse | null>(null);
     const [serverStatus, setServerStatus] = useState<ServerStatusPayload | null>({ state: 'idle' });
     const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>(
@@ -126,10 +127,16 @@ const App = (): JSX.Element => {
             // For now just parse and summarize top-level keys to validate ingestion.
             const json = JSON.parse(text) as Record<string, unknown>;
             const keys = Object.keys(json).sort();
-            setAnalysisSummary(`[Manual] Loaded analysis with top-level keys: ${keys.join(', ')}`);
+            setAnalysisSummary({
+                kind: 'manual',
+                message: `[Manual] Loaded analysis with top-level keys: ${keys.join(', ')}`,
+            });
         } catch (error) {
             console.error('Failed to parse analysis JSON', error);
-            setAnalysisSummary('Failed to parse analysis JSON. Please check the file contents.');
+            setAnalysisSummary({
+                kind: 'manual',
+                message: 'Failed to parse analysis JSON. Please check the file contents.',
+            });
         }
     };
 
@@ -199,12 +206,20 @@ const App = (): JSX.Element => {
                         setLatestAnalysis(message.payload.analysis);
 
                         const totals = message.payload.analysis.summaries?.totals;
-                        const summaryText = totals
-                            ? `Server analysis (${message.payload.analysis.target.name}) — Flash ${formatBytes(
-                                totals.flashUsed,
-                            )}, RAM ${formatBytes(totals.ramUsed)}`
-                            : `Server analysis (${message.payload.analysis.target.name}) loaded.`;
-                        setAnalysisSummary(summaryText);
+                        const targetName = message.payload.analysis.target.name;
+                        if (totals) {
+                            setAnalysisSummary({
+                                kind: 'server',
+                                targetName,
+                                flashUsed: totals.flashUsed,
+                                ramUsed: totals.ramUsed,
+                            });
+                        } else {
+                            setAnalysisSummary({
+                                kind: 'server',
+                                targetName,
+                            });
+                        }
                     }
                 } catch (error) {
                     console.warn('Failed to parse server message', error);
@@ -219,7 +234,7 @@ const App = (): JSX.Element => {
             socket.addEventListener('error', (event) => {
                 console.warn('WebSocket error', event);
                 setConnectionState('error');
-                setConnectionError('WebSocket connection error');
+                setConnectionError('WebSocket not connected');
             });
         };
 
@@ -341,83 +356,6 @@ const App = (): JSX.Element => {
     const isRunDisabled =
         connectionState !== 'connected' || isTriggeringRun || serverStatus?.state === 'running' || !configReady;
 
-    const topLevelUsage = useMemo<UsageBarData[]>(() => {
-        if (!latestAnalysis) {
-            return [];
-        }
-
-        const runtimeGroups: RuntimeGroupSummary[] = latestAnalysis.summaries.runtimeGroups ?? [];
-
-        if (runtimeGroups.length > 0) {
-            return runtimeGroups.map((group: RuntimeGroupSummary) => {
-                const total = group.capacityBytes;
-                const used = Math.max(total - group.freeBytes, 0);
-                return {
-                    id: group.groupId,
-                    label: group.name,
-                    total,
-                    used,
-                    free: group.freeBytes,
-                    percent: computeUsagePercent(used, total),
-                    description: group.description,
-                };
-            });
-        }
-
-        const regionSummaryEntries: Array<[string, RegionSummary]> = latestAnalysis.summaries.byRegion.map(
-            (summary: RegionSummary) => [summary.regionId, summary],
-        );
-        const regionSummaryMap = new Map<string, RegionSummary>(regionSummaryEntries);
-
-        const groups: UsageBarData[] = [];
-
-        TOP_LEVEL_GROUPS.forEach((group) => {
-            const matchingRegions = latestAnalysis.regions.filter((region) => group.kinds.includes(region.kind));
-            if (matchingRegions.length === 0) {
-                return;
-            }
-
-            let total = 0;
-            let free = 0;
-            let hasCompleteData = true;
-
-            matchingRegions.forEach((region) => {
-                const summary = regionSummaryMap.get(region.id);
-                if (!summary) {
-                    hasCompleteData = false;
-                    return;
-                }
-
-                const size = summary.size ?? region.size;
-                const regionFree =
-                    summary.freeForDynamic !== undefined
-                        ? summary.freeForDynamic
-                        : Math.max(size - summary.usedStatic - (summary.reserved ?? 0), 0);
-
-                total += size;
-                free += Math.max(regionFree, 0);
-            });
-
-            if (!hasCompleteData || total === 0) {
-                return;
-            }
-
-            const used = Math.max(total - free, 0);
-
-            groups.push({
-                id: group.id,
-                label: group.label,
-                total,
-                used,
-                free,
-                percent: computeUsagePercent(used, total),
-                description: group.description,
-            });
-        });
-
-        return groups;
-    }, [latestAnalysis]);
-
     const regionUsage = useMemo<UsageBarData[]>(() => {
         if (!latestAnalysis) {
             return [];
@@ -429,7 +367,7 @@ const App = (): JSX.Element => {
                 const total = bank.capacityBytes;
                 const used = Math.max(total - bank.freeBytes, 0);
                 const contributors = bank.contributors
-                    .map((contributor) => `${contributor.regionName} (${formatBytes(contributor.sizeBytes)})`)
+                    .map((contributor) => `${contributor.regionName} (${formatValue(contributor.sizeBytes)})`)
                     .join(', ');
 
                 const descriptionParts: string[] = [];
@@ -482,7 +420,7 @@ const App = (): JSX.Element => {
             }
             descriptionParts.push(`Kind: ${humanizeRegionKind(region.kind)}`);
             if (summary?.reserved) {
-                descriptionParts.push(`Reserved ${formatBytes(summary.reserved)}`);
+                descriptionParts.push(`Reserved ${formatValue(summary.reserved)}`);
             }
 
             return {
@@ -500,20 +438,20 @@ const App = (): JSX.Element => {
     const teensySizePanels = useMemo(
         () => {
             if (!teensySizeReport) {
-                return [] as { title: string; rows: { label: string; value: string }[] }[];
+                return [] as { title: string; rows: { label: string; value: number | undefined }[] }[];
             }
 
-            const panels: { title: string; rows: { label: string; value: string }[] }[] = [];
+            const panels: { title: string; rows: { label: string; value: number | undefined }[] }[] = [];
 
             if (teensySizeReport.flash) {
                 const { code, data, headers, freeForFiles } = teensySizeReport.flash;
                 panels.push({
                     title: 'FLASH',
                     rows: [
-                        { label: 'Code', value: formatBytes(code) },
-                        { label: 'Data', value: formatBytes(data) },
-                        { label: 'Headers', value: formatBytes(headers) },
-                        { label: 'Free for files', value: formatBytes(freeForFiles) },
+                        { label: 'Code', value: code },
+                        { label: 'Data', value: data },
+                        { label: 'Headers', value: headers },
+                        { label: 'Free for files', value: freeForFiles },
                     ],
                 });
             }
@@ -523,10 +461,10 @@ const App = (): JSX.Element => {
                 panels.push({
                     title: 'RAM1',
                     rows: [
-                        { label: 'Code (ITCM)', value: formatBytes(code) },
-                        { label: 'Variables (DTCM)', value: formatBytes(variables) },
-                        { label: 'Padding', value: formatBytes(padding) },
-                        { label: 'Free for local variables', value: formatBytes(freeForLocalVariables) },
+                        { label: 'Code (ITCM)', value: code },
+                        { label: 'Variables (DTCM)', value: variables },
+                        { label: 'Padding', value: padding },
+                        { label: 'Free for local variables', value: freeForLocalVariables },
                     ],
                 });
             }
@@ -536,8 +474,8 @@ const App = (): JSX.Element => {
                 panels.push({
                     title: 'RAM2',
                     rows: [
-                        { label: 'Variables', value: formatBytes(variables) },
-                        { label: 'Free for malloc/new', value: formatBytes(freeForMalloc) },
+                        { label: 'Variables', value: variables },
+                        { label: 'Free for malloc/new', value: freeForMalloc },
                     ],
                 });
             }
@@ -550,24 +488,26 @@ const App = (): JSX.Element => {
 
     const renderUsageBar = (summary: UsageBarData): JSX.Element => {
         const percent = summary.percent ?? computeUsagePercent(summary.used, summary.total);
-        const usedLabel = formatBytes(summary.used);
-        const totalLabel = formatBytes(summary.total);
-        const freeLabel = summary.free !== undefined ? formatBytes(summary.free) : null;
+        const hasPercent = percent !== null;
 
         return (
             <div className="usage-item" key={summary.id}>
                 <div className="usage-header">
                     <span className="usage-label">{summary.label}</span>
                     <span className="usage-values">
-                        {usedLabel} / {totalLabel}
-                        {percent !== null ? ` (${percent.toFixed(1)}%)` : ''}
+                        <SizeValue value={summary.used} /> / <SizeValue value={summary.total} />
+                        {hasPercent ? ` (${percent.toFixed(1)}%)` : ''}
                     </span>
                 </div>
                 <div className="usage-bar">
-                    <div className="usage-bar-fill" style={{ width: percent !== null ? `${percent}%` : '0%' }} />
+                    <div className="usage-bar-fill" style={{ width: hasPercent ? `${percent}%` : '0%' }} />
                 </div>
                 {summary.description ? <p className="usage-description">{summary.description}</p> : null}
-                {freeLabel ? <p className="usage-free">Free now: {freeLabel}</p> : null}
+                {summary.free !== undefined ? (
+                    <p className="usage-free">
+                        Free now: <SizeValue value={summary.free} />
+                    </p>
+                ) : null}
             </div>
         );
     };
@@ -575,6 +515,39 @@ const App = (): JSX.Element => {
     const lastRunCompletedAt = serverStatus?.lastRunCompletedAt
         ? new Date(serverStatus.lastRunCompletedAt)
         : null;
+    const analysisTotals = latestAnalysis?.summaries?.totals;
+
+    const renderAnalysisSummary = (): JSX.Element => {
+        if (!analysisSummary) {
+            return <p>No analysis loaded yet.</p>;
+        }
+
+        if (analysisSummary.kind === 'manual') {
+            return <p className="summary">{analysisSummary.message}</p>;
+        }
+
+        return (
+            <p className="summary">
+                <span>Target: {analysisSummary.targetName}</span>
+                {analysisSummary.flashUsed !== undefined ? (
+                    <>
+                        {' • '}
+                        <span>
+                            Flash <SizeValue value={analysisSummary.flashUsed} />
+                        </span>
+                    </>
+                ) : null}
+                {analysisSummary.ramUsed !== undefined ? (
+                    <>
+                        {' • '}
+                        <span>
+                            RAM <SizeValue value={analysisSummary.ramUsed} />
+                        </span>
+                    </>
+                ) : null}
+            </p>
+        );
+    };
 
     return (
         <div className="app-root">
@@ -606,18 +579,22 @@ const App = (): JSX.Element => {
                                 <dd>{new Date(serverStatus.lastRunCompletedAt).toLocaleString()}</dd>
                             </div>
                         )}
-                        {latestAnalysis && (
+                        {analysisTotals ? (
                             <>
                                 <div>
                                     <dt>Flash used</dt>
-                                    <dd>{formatBytes(latestAnalysis.summaries.totals.flashUsed)}</dd>
+                                    <dd>
+                                        <SizeValue value={analysisTotals.flashUsed} />
+                                    </dd>
                                 </div>
                                 <div>
                                     <dt>RAM used</dt>
-                                    <dd>{formatBytes(latestAnalysis.summaries.totals.ramUsed)}</dd>
+                                    <dd>
+                                        <SizeValue value={analysisTotals.ramUsed} />
+                                    </dd>
                                 </div>
                             </>
-                        )}
+                        ) : null}
                         {health?.version && (
                             <div>
                                 <dt>Server version</dt>
@@ -625,7 +602,7 @@ const App = (): JSX.Element => {
                             </div>
                         )}
                         {connectionError && (
-                            <div className="status-error">{connectionError}</div>
+                            <div className="status-warning">{connectionError}</div>
                         )}
                     </dl>
 
@@ -740,29 +717,7 @@ const App = (): JSX.Element => {
                     <span>Load analysis JSON:</span>
                     <input type="file" accept="application/json" onChange={handleFileChange} />
                 </label>
-                {analysisSummary ? <p className="summary">{analysisSummary}</p> : <p>No analysis loaded yet.</p>}
-
-
-                <section className="summary-card">
-                    <div className="summary-header">
-                        <h2>Usage Overview</h2>
-                        <div className="summary-meta">
-                            <span className="summary-state">{statusLabel}</span>
-                            {lastRunCompletedAt ? (
-                                <span className="summary-updated">Updated {lastRunCompletedAt.toLocaleString()}</span>
-                            ) : (
-                                <span className="summary-updated">Awaiting first analysis</span>
-                            )}
-                        </div>
-                    </div>
-                    {topLevelUsage.length > 0 ? (
-                        <div className="usage-grid">
-                            {topLevelUsage.map((usage) => renderUsageBar(usage))}
-                        </div>
-                    ) : (
-                        <p className="summary-placeholder">Run an analysis to populate memory usage.</p>
-                    )}
-                </section>
+                {renderAnalysisSummary()}
 
                 <section className="summary-card">
                     <div className="summary-header">
@@ -794,7 +749,9 @@ const App = (): JSX.Element => {
                                         {panel.rows.map((row) => (
                                             <div key={row.label}>
                                                 <dt>{row.label}</dt>
-                                                <dd>{row.value}</dd>
+                                                <dd>
+                                                    <SizeValue value={row.value} />
+                                                </dd>
                                             </div>
                                         ))}
                                     </dl>

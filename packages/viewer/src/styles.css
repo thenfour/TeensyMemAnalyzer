@@ -375,3 +375,26 @@ header>p {
 .panel>h2 {
     margin-top: 0;
 }
+
+.size-value {
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.size-value:hover,
+.size-value:focus-visible {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+.size-value:disabled,
+.size-value.size-value--empty {
+    cursor: default;
+    color: #94a3b8;
+    text-decoration: none;
+}

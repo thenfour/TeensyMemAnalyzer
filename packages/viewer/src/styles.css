@@ -1,0 +1,128 @@
+:root {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #1f2933;
+    background-color: #f8fafc;
+    line-height: 1.5;
+}
+
+body {
+    margin: 0;
+}
+
+.app-root {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 3rem;
+}
+
+header>h1 {
+    margin: 0;
+    font-size: 2rem;
+}
+
+header>p {
+    margin-top: 0.5rem;
+    color: #52606d;
+}
+
+.uploader {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    font-weight: 600;
+}
+
+.summary {
+    background-color: #e6f4ff;
+    border-left: 4px solid #1d4ed8;
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    color: #1d4ed8;
+}
+
+.placeholder-grid {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    margin-top: 2rem;
+}
+
+.status-card {
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.status-card h2 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+}
+
+.status-card dl {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem 1.5rem;
+    margin: 0;
+}
+
+.status-card dt {
+    font-weight: 600;
+    color: #334155;
+}
+
+.status-card dd {
+    margin: 0.25rem 0 0;
+}
+
+.status-error {
+    grid-column: 1 / -1;
+    background-color: #fee2e2;
+    border-left: 4px solid #dc2626;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    color: #991b1b;
+}
+
+.chip {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-weight: 600;
+    text-transform: capitalize;
+    background-color: #e2e8f0;
+    color: #1f2933;
+}
+
+.chip--connected {
+    background-color: #dcfce7;
+    color: #166534;
+}
+
+.chip--connecting {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.chip--error {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+
+.chip--disconnected {
+    background-color: #e2e8f0;
+    color: #64748b;
+}
+
+.panel {
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+    padding: 1.25rem;
+}
+
+.panel>h2 {
+    margin-top: 0;
+}

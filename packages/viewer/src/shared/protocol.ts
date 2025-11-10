@@ -1,0 +1,28 @@
+export type ServerLifecycleState = 'idle' | 'watching' | 'running' | 'error';
+
+export interface ServerStatusPayload {
+  state: ServerLifecycleState;
+  lastRunStartedAt?: string;
+  lastRunCompletedAt?: string;
+  errorMessage?: string;
+}
+
+export interface HealthResponse {
+  status: 'ok';
+  version: string;
+  port: number;
+  state: ServerStatusPayload;
+}
+
+export interface ServerConfig {
+  targetId?: string;
+  elfPath?: string;
+  mapPath?: string;
+  toolchainDir?: string;
+  toolchainPrefix?: string;
+  debounceMs?: number;
+}
+
+export type ServerMessage =
+  | { type: 'status'; payload: ServerStatusPayload }
+  | { type: 'hello'; payload: { message: string } };

@@ -10,6 +10,7 @@ configurations focused on **Teensy 4.x** targets.
 - Summarize flash and RAM usage by region and category, including reserved ranges and free space.
 - Emit a structured JSON model that other tooling or visualizations can consume.
 - Provide a CLI with human-readable summaries, parity fields that match `teensy_size`, and top-symbol listings.
+- Offer an experimental web viewer (React + Vite) for visual memory exploration.
 
 ---
 
@@ -36,6 +37,20 @@ configurations focused on **Teensy 4.x** targets.
    .\example\run-cli.ps1       # text output
    .\example\run-cli.ps1 -Json  # JSON output
    ```
+
+5. **Launch the viewer (optional)**
+  ```powershell
+  yarn workspace @teensy-mem-explorer/viewer dev
+  ```
+  This command now starts both the React frontend (default `http://localhost:5173`) and a local companion
+  service on port `5317`. Open the browser URL, click *Load analysis JSON*, and select the analyzer output you
+  want to explore. The companion panel will show connection status while we flesh out automated workflows.
+
+### Viewer Workflow
+
+1. Generate an analysis JSON file (e.g. `teensy-mem-explorer ... --json > analysis.json`).
+2. Run `yarn workspace @teensy-mem-explorer/viewer dev` to start the frontend.
+3. Visit the printed URL, upload `analysis.json`, and use the panels to inspect memory usage.
 
 ---
 

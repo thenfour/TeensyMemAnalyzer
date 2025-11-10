@@ -10,8 +10,6 @@ interface ReadelfSectionRow {
   flags: string;
 }
 
-const READ_ELF_SECTION_HEADER = /^\s*\[\s*(\d+)\]\s+([^\s]+)\s+([^\s]+)\s+([0-9a-fA-F]+)\s+([0-9a-fA-F]+)\s+([0-9a-fA-F]+)\s+([^\s]+)\s+([^\s]*)\s+([^\s]*)\s*$/;
-
 const parseFlags = (raw: string): SectionFlags => ({
   alloc: raw.includes('A'),
   exec: raw.includes('X'),
@@ -39,19 +37,56 @@ const classifySection = (name: string, flags: SectionFlags): SectionCategory => 
 };
 
 const parseLine = (line: string): ReadelfSectionRow | null => {
-  const match = READ_ELF_SECTION_HEADER.exec(line);
-  if (!match) {
+  if (!line.startsWith('[')) {
     return null;
   }
 
-  const [, indexStr, name, type, addrStr, offStr, sizeStr, flags] = match;
+  const indexMatch = /^\[\s*(\d+)\]/.exec(line);
+  if (!indexMatch) {
+    return null;
+  }
+
+  const index = parseInt(indexMatch[1], 10);
+
+  const remainder = line.slice(indexMatch[0].length).trim();
+  if (!remainder) {
+    return null;
+  }
+
+  const normalized = remainder.replace(/\s+/g, ' ');
+  const parts = normalized.split(' ');
+
+  if (parts.length < 7) {
+    return null;
+  }
+
+  const name = parts[0];
+  const type = parts[1];
+  const addrHex = parts[2];
+  const offHex = parts[3];
+  const sizeHex = parts[4];
+  const esHex = parts[5];
+  const rest = parts.slice(6);
+
+  if (rest.length < 3) {
+    return null;
+  }
+
+  const hasFlags = rest.length === 4;
+  const flags = hasFlags ? rest[0] : '';
+
+  const addr = parseInt(addrHex, 16);
+  const off = parseInt(offHex, 16);
+  const size = parseInt(sizeHex, 16);
+  void parseInt(esHex, 16);
+
   return {
-    index: parseInt(indexStr, 10),
+    index,
     name,
     type,
-    addr: parseInt(addrStr, 16),
-    off: parseInt(offStr, 16),
-    size: parseInt(sizeStr, 16),
+    addr,
+    off,
+    size,
     flags,
   };
 };

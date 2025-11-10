@@ -1,13 +1,13 @@
 {
     "$schema": "./schema/memory-map.schema.json",
-    "targetId": "teensy41",
+    "targetId": "teensy40",
     "regions": [
         {
             "id": "FLASH",
             "name": "QSPI Flash",
             "kind": "flash",
             "start": 1610612736,
-            "size": 8388608,
+            "size": 2097152,
             "reserved": [
                 {
                     "name": "flexspi_config",
@@ -21,8 +21,8 @@
                 },
                 {
                     "name": "recovery_sector",
-                    "start": 1618739200,
-                    "size": 262144
+                    "start": 1612644352,
+                    "size": 65536
                 }
             ]
         },
@@ -53,13 +53,6 @@
             "kind": "dma_ram",
             "start": 538968064,
             "size": 524288
-        },
-        {
-            "id": "EXTMEM",
-            "name": "External PSRAM",
-            "kind": "ext_ram",
-            "start": 1879048192,
-            "size": 33554432
         }
     ]
 }

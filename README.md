@@ -114,6 +114,7 @@ The analyzer will:
   - These “copy” sections should be modeled so they contribute to:
     - Flash usage (init images at LMA).
     - RAM usage (runtime location at VMA).
+    - FASTRUN in particular must be surfaced as **dual residency**: code lives in flash at build time (`.text.itcm` / `.fastrun` stored in `FLASH`) yet occupies ITCM (RAM1) after startup. The analyzer must treat this as a first-class behavior, explicitly linking the flash init image to the ITCM runtime footprint so region summaries, symbol listings, and “free RAM1” calculations all reflect the copied bytes.
 
 ---
 

@@ -7,6 +7,9 @@
         "regions"
     ],
     "properties": {
+        "$schema": {
+            "type": "string"
+        },
         "targetId": {
             "type": "string"
         },

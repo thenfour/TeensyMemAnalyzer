@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import fs from 'fs';
 import path from 'path';
 import {
   analyzeBuild,
@@ -87,6 +88,12 @@ const parseArgs = (argv: string[]): CliOptions => {
   }
 
   return options;
+};
+
+const swapExtension = (filePath: string, nextExtension: string): string => {
+  const directory = path.dirname(filePath);
+  const base = path.basename(filePath, path.extname(filePath));
+  return path.join(directory, `${base}${nextExtension}`);
 };
 
 const formatBytes = (bytes: number): string => `${bytes} B`;
@@ -285,14 +292,33 @@ const main = async (): Promise<void> => {
   try {
     const options = parseArgs(process.argv.slice(2));
 
-    const { targetId, elfPath, mapPath, toolchainDir, toolchainPrefix, outputFormat } = options;
+    const originalMapPath = options.mapPath;
+    let { targetId, toolchainDir, toolchainPrefix, outputFormat } = options;
+    let elfPath = options.elfPath;
+    let mapPath = options.mapPath;
+
+    if (!elfPath && mapPath) {
+      const inferredElf = swapExtension(mapPath, '.elf');
+      if (fs.existsSync(inferredElf)) {
+        elfPath = inferredElf;
+      }
+    }
+
+    if (!mapPath && elfPath) {
+      const inferredMap = swapExtension(elfPath, '.map');
+      if (fs.existsSync(inferredMap)) {
+        mapPath = inferredMap;
+      }
+    }
 
     if (!targetId) {
       throw new Error('Missing required --target <id>.');
     }
 
     if (!elfPath) {
-      throw new Error('Missing required --elf <path>.');
+      const attempted = originalMapPath ? swapExtension(originalMapPath, '.elf') : undefined;
+      const detail = attempted ? ` Tried to infer ${attempted}.` : '';
+      throw new Error(`Missing required --elf <path>.${detail}`);
     }
 
     const params: AnalyzeBuildParams = {

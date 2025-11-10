@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Analysis, Region, RegionSummary, TotalsSummary } from '@teensy-mem-explorer/analyzer';
+import type { Analysis, RegionKind, RegionSummary } from '@teensy-mem-explorer/analyzer';
 import type { HealthResponse, ServerConfig, ServerMessage, ServerStatusPayload } from './shared/protocol';
 
 const formatBytes = (value: number | undefined): string => {
@@ -22,9 +22,60 @@ const computeUsagePercent = (used: number | undefined, total: number | undefined
     return Math.min(100, Math.max(0, (used / total) * 100));
 };
 
-const mapRegionById = (regions: Region[], id: string): Region | undefined => regions.find((region) => region.id === id);
-const mapRegionSummaryById = (summaries: RegionSummary[], id: string): RegionSummary | undefined =>
-    summaries.find((summary) => summary.regionId === id);
+const humanizeRegionKind = (kind: RegionKind): string => {
+    switch (kind) {
+        case 'flash':
+            return 'Flash';
+        case 'code_ram':
+            return 'Code RAM';
+        case 'data_ram':
+            return 'Data RAM';
+        case 'dma_ram':
+            return 'DMA RAM';
+        case 'ext_ram':
+            return 'External RAM';
+        default:
+            return 'Other';
+    }
+};
+
+type UsageBarData = {
+    id: string;
+    label: string;
+    used: number | undefined;
+    total: number | undefined;
+    free?: number | undefined;
+    percent: number | null;
+    description?: string;
+};
+
+type TopLevelGroup = {
+    id: string;
+    label: string;
+    description: string;
+    kinds: RegionKind[];
+};
+
+const TOP_LEVEL_GROUPS: TopLevelGroup[] = [
+    {
+        id: 'flash',
+        label: 'Flash',
+        description: 'Program storage in onboard flash (read-only at runtime).',
+        kinds: ['flash'],
+    },
+    {
+        id: 'ram1',
+        label: 'RAM1',
+        description: 'Tightly coupled RAM for instructions, globals, stack, and heap.',
+        kinds: ['code_ram', 'data_ram'],
+    },
+    {
+        id: 'ram2',
+        label: 'RAM2',
+        description: 'AXI RAM well-suited for DMA buffers and large allocations.',
+        kinds: ['dma_ram'],
+    },
+];
 
 const App = (): JSX.Element => {
     const [analysisSummary, setAnalysisSummary] = useState<string | null>(null);
@@ -253,74 +304,123 @@ const App = (): JSX.Element => {
     const isRunDisabled =
         connectionState !== 'connected' || isTriggeringRun || serverStatus?.state === 'running' || !configReady;
 
-    const usageSummaries = useMemo(() => {
+    const topLevelUsage = useMemo<UsageBarData[]>(() => {
         if (!latestAnalysis) {
-            return null;
+            return [];
         }
 
-        const totals: TotalsSummary = latestAnalysis.summaries.totals;
+        const regionSummaryMap = new Map<string, RegionSummary>(
+            latestAnalysis.summaries.byRegion.map((summary) => [summary.regionId, summary]),
+        );
 
-        const flashRegion = mapRegionById(latestAnalysis.regions, 'FLASH');
-        const itcmRegion = mapRegionById(latestAnalysis.regions, 'ITCM');
-        const dtcmRegion = mapRegionById(latestAnalysis.regions, 'DTCM');
-        const dmaRegion = mapRegionById(latestAnalysis.regions, 'DMAMEM');
+        const groups: UsageBarData[] = [];
 
-        const flashSummary = mapRegionSummaryById(latestAnalysis.summaries.byRegion, 'FLASH');
-        const itcmSummary = mapRegionSummaryById(latestAnalysis.summaries.byRegion, 'ITCM');
-        const dtcmSummary = mapRegionSummaryById(latestAnalysis.summaries.byRegion, 'DTCM');
-        const dmaSummary = mapRegionSummaryById(latestAnalysis.summaries.byRegion, 'DMAMEM');
+        TOP_LEVEL_GROUPS.forEach((group) => {
+            const matchingRegions = latestAnalysis.regions.filter((region) => group.kinds.includes(region.kind));
+            if (matchingRegions.length === 0) {
+                return;
+            }
 
-        return {
-            flash: {
-                used: totals.flashUsed,
-                total: flashSummary?.size ?? flashRegion?.size,
-                percent: computeUsagePercent(totals.flashUsed, flashSummary?.size ?? flashRegion?.size),
-                free: flashSummary ? Math.max(flashSummary.size - flashSummary.usedStatic, 0) : undefined,
-                description: `Code and constants in program flash. File-only sections: ${formatBytes(
-                    latestAnalysis.summaries.fileOnly.totalBytes,
-                )}.`,
-            },
-            ramCode: {
-                used: totals.ramCode,
-                total: itcmSummary?.size ?? itcmRegion?.size,
-                percent: computeUsagePercent(totals.ramCode, itcmSummary?.size ?? itcmRegion?.size),
-                free: itcmSummary ? Math.max(itcmSummary.size - itcmSummary.usedStatic, 0) : undefined,
-                description: 'Executable code residing in ITCM.',
-            },
-            ramData: {
-                used: totals.ramDataInit + totals.ramBss,
-                total: dtcmSummary?.size ?? dtcmRegion?.size,
-                percent: computeUsagePercent(totals.ramDataInit + totals.ramBss, dtcmSummary?.size ?? dtcmRegion?.size),
-                free: dtcmSummary ? Math.max(dtcmSummary.size - dtcmSummary.usedStatic, 0) : undefined,
-                description: 'Globals and BSS in tightly coupled RAM.',
-            },
-            ramDma: {
-                used: totals.ramDma,
-                total: dmaSummary?.size ?? dmaRegion?.size,
-                percent: computeUsagePercent(totals.ramDma, dmaSummary?.size ?? dmaRegion?.size),
-                free: dmaSummary ? Math.max(dmaSummary.size - dmaSummary.usedStatic, 0) : undefined,
-                description: 'DMAMEM available to DMA engines and allocators.',
-            },
-        };
+            let total = 0;
+            let free = 0;
+            let hasCompleteData = true;
+
+            matchingRegions.forEach((region) => {
+                const summary = regionSummaryMap.get(region.id);
+                if (!summary) {
+                    hasCompleteData = false;
+                    return;
+                }
+
+                const size = summary.size ?? region.size;
+                const regionFree =
+                    summary.freeForDynamic !== undefined
+                        ? summary.freeForDynamic
+                        : Math.max(size - summary.usedStatic - (summary.reserved ?? 0), 0);
+
+                total += size;
+                free += Math.max(regionFree, 0);
+            });
+
+            if (!hasCompleteData || total === 0) {
+                return;
+            }
+
+            const used = Math.max(total - free, 0);
+
+            groups.push({
+                id: group.id,
+                label: group.label,
+                total,
+                used,
+                free,
+                percent: computeUsagePercent(used, total),
+                description: group.description,
+            });
+        });
+
+        return groups;
     }, [latestAnalysis]);
 
-    const renderUsageBar = (
-        label: string,
-        summary: {
-            used: number | undefined;
-            total: number | undefined;
-            percent: number | null;
-            description?: string;
-        } | null,
-    ): JSX.Element => {
-        const percent = summary?.percent ?? null;
-        const usedLabel = formatBytes(summary?.used);
-        const totalLabel = formatBytes(summary?.total);
+    const regionUsage = useMemo<UsageBarData[]>(() => {
+        if (!latestAnalysis) {
+            return [];
+        }
+
+        const regionSummaryMap = new Map<string, RegionSummary>(
+            latestAnalysis.summaries.byRegion.map((summary) => [summary.regionId, summary]),
+        );
+
+        return latestAnalysis.regions.map((region) => {
+            const summary = regionSummaryMap.get(region.id);
+            const size = summary?.size ?? region.size;
+            const freeRaw =
+                summary?.freeForDynamic !== undefined
+                    ? summary.freeForDynamic
+                    : summary
+                        ? Math.max(size - summary.usedStatic - (summary.reserved ?? 0), 0)
+                        : undefined;
+            const free = freeRaw !== undefined ? Math.max(freeRaw, 0) : undefined;
+            const used =
+                free !== undefined
+                    ? Math.max(size - free, 0)
+                    : summary
+                        ? Math.max(summary.usedStatic + (summary.reserved ?? 0), 0)
+                        : undefined;
+
+            const descriptionParts: string[] = [];
+            if (region.name && region.name !== region.id) {
+                descriptionParts.push(`${region.name} (${region.id})`);
+            } else {
+                descriptionParts.push(`Region ${region.id}`);
+            }
+            descriptionParts.push(`Kind: ${humanizeRegionKind(region.kind)}`);
+            if (summary?.reserved) {
+                descriptionParts.push(`Reserved ${formatBytes(summary.reserved)}`);
+            }
+
+            return {
+                id: region.id,
+                label: region.name ?? region.id,
+                total: size,
+                used,
+                free,
+                percent: computeUsagePercent(used, size),
+                description: descriptionParts.join(' • '),
+            };
+        });
+    }, [latestAnalysis]);
+
+    const renderUsageBar = (summary: UsageBarData): JSX.Element => {
+        const percent = summary.percent ?? computeUsagePercent(summary.used, summary.total);
+        const usedLabel = formatBytes(summary.used);
+        const totalLabel = formatBytes(summary.total);
+        const freeLabel = summary.free !== undefined ? formatBytes(summary.free) : null;
 
         return (
-            <div className="usage-item">
+            <div className="usage-item" key={summary.id}>
                 <div className="usage-header">
-                    <span className="usage-label">{label}</span>
+                    <span className="usage-label">{summary.label}</span>
                     <span className="usage-values">
                         {usedLabel} / {totalLabel}
                         {percent !== null ? ` (${percent.toFixed(1)}%)` : ''}
@@ -329,7 +429,8 @@ const App = (): JSX.Element => {
                 <div className="usage-bar">
                     <div className="usage-bar-fill" style={{ width: percent !== null ? `${percent}%` : '0%' }} />
                 </div>
-                {summary?.description ? <p className="usage-description">{summary.description}</p> : null}
+                {summary.description ? <p className="usage-description">{summary.description}</p> : null}
+                {freeLabel ? <p className="usage-free">Free now: {freeLabel}</p> : null}
             </div>
         );
     };
@@ -517,17 +618,32 @@ const App = (): JSX.Element => {
                             )}
                         </div>
                     </div>
-                    {usageSummaries ? (
-                        <>
-                            <div className="usage-grid">
-                                {renderUsageBar('Flash', usageSummaries.flash)}
-                                {renderUsageBar('RAM (code)', usageSummaries.ramCode)}
-                                {renderUsageBar('RAM (data)', usageSummaries.ramData)}
-                                {renderUsageBar('RAM (DMA)', usageSummaries.ramDma)}
-                            </div>
-                        </>
+                    {topLevelUsage.length > 0 ? (
+                        <div className="usage-grid">
+                            {topLevelUsage.map((usage) => renderUsageBar(usage))}
+                        </div>
                     ) : (
                         <p className="summary-placeholder">Run an analysis to populate memory usage.</p>
+                    )}
+                </section>
+
+                <section className="summary-card region-card">
+                    <div className="summary-header">
+                        <h2>Regions</h2>
+                        <div className="summary-meta">
+                            {lastRunCompletedAt ? (
+                                <span className="summary-updated">Based on {lastRunCompletedAt.toLocaleString()}</span>
+                            ) : (
+                                <span className="summary-updated">Awaiting first analysis</span>
+                            )}
+                        </div>
+                    </div>
+                    {regionUsage.length > 0 ? (
+                        <div className="usage-grid region-list">
+                            {regionUsage.map((usage) => renderUsageBar(usage))}
+                        </div>
+                    ) : (
+                        <p className="summary-placeholder">Run an analysis to see per-region usage.</p>
                     )}
                 </section>
 

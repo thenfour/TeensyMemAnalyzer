@@ -557,6 +557,123 @@ rect {
     font-style: italic;
 }
 
+.memory-map-symbols-section {
+    margin-top: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.memory-map-symbols-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-end;
+}
+
+.memory-map-symbols-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.memory-map-symbols-heading {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.memory-map-symbols-summary {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.2rem;
+    color: #475569;
+    font-size: 0.9rem;
+}
+
+.memory-map-symbols-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.memory-map-symbols-filter label {
+    font-weight: 600;
+    color: #334155;
+    font-size: 0.92rem;
+}
+
+.memory-map-symbols-filter input {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.92rem;
+    color: #0f172a;
+    background: #ffffff;
+}
+
+.memory-map-symbols-filter input:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.memory-map-symbols-filter input:disabled {
+    cursor: not-allowed;
+    background: #f8fafc;
+    color: #94a3b8;
+}
+
+.memory-map-symbols-limit {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.memory-map-symbols-limit-label {
+    font-weight: 600;
+    color: #334155;
+    font-size: 0.9rem;
+}
+
+.memory-map-symbols-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.memory-map-symbols-chip {
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #1e293b;
+    border-radius: 9999px;
+    padding: 0.2rem 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.memory-map-symbols-chip:hover,
+.memory-map-symbols-chip:focus-visible {
+    border-color: #2563eb;
+    color: #1d4ed8;
+}
+
+.memory-map-symbols-chip--active {
+    background: #2563eb;
+    border-color: #1d4ed8;
+    color: #ffffff;
+}
+
+.memory-map-symbols-chip:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
 .memory-map-legend {
     display: flex;
     flex-wrap: wrap;

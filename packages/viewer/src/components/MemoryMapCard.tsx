@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { ChangeEvent, CSSProperties } from 'react';
 import type { Analysis, Summaries, Symbol as AnalyzerSymbol } from '@teensy-mem-explorer/analyzer';
 import { SizeValue } from './SizeValue';
 import AddressValue from './AddressValue';
@@ -22,6 +22,9 @@ const MEMORY_MAP_DIMENSIONS = {
 };
 
 type SymbolIndex = Map<string, AnalyzerSymbol[]>;
+
+const SYMBOL_LIMIT_OPTIONS = [10, 25, 50, 100] as const;
+const DEFAULT_SYMBOL_LIMIT = SYMBOL_LIMIT_OPTIONS[0];
 
 interface MemoryMapBankVisualizationProps {
     bankName: string;
@@ -291,14 +294,26 @@ const MemoryMapBankVisualization = ({
 };
 
 const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | null; symbolIndex: SymbolIndex }): JSX.Element => {
-    if (!span) {
-        return <p className="memory-map-details-empty">Select a span to inspect its address range and size.</p>;
-    }
+    const [symbolFilter, setSymbolFilter] = useState('');
+    const [symbolLimit, setSymbolLimit] = useState<number>(DEFAULT_SYMBOL_LIMIT);
+
+    useEffect(() => {
+        setSymbolFilter('');
+        setSymbolLimit(DEFAULT_SYMBOL_LIMIT);
+    }, [span?.id]);
+
+    const handleFilterChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+        setSymbolFilter(event.target.value);
+    }, []);
+
+    const handleLimitChange = useCallback((value: number) => {
+        setSymbolLimit(value);
+    }, []);
 
     const renderAddress = (value: number | undefined): JSX.Element =>
         value !== undefined ? <AddressValue value={value} /> : <span className="memory-map-address-unknown">Unknown</span>;
 
-    const topSymbols = useMemo<SymbolContribution[]>(() => {
+    const allSymbols = useMemo<SymbolContribution[]>(() => {
         if (!span?.regionId || span.startAddress === undefined || span.endAddress === undefined) {
             return [];
         }
@@ -353,8 +368,34 @@ const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | nul
             return a.name.localeCompare(b.name);
         });
 
-        return contributions.slice(0, 8);
+        return contributions;
     }, [span, symbolIndex]);
+
+    const normalizedFilter = symbolFilter.trim().toLowerCase();
+
+    const filteredSymbols = useMemo(() => {
+        if (!normalizedFilter) {
+            return allSymbols;
+        }
+
+        return allSymbols.filter((symbol) => symbol.name.toLowerCase().includes(normalizedFilter));
+    }, [allSymbols, normalizedFilter]);
+
+    const displayedSymbols = useMemo(() => filteredSymbols.slice(0, symbolLimit), [filteredSymbols, symbolLimit]);
+    const totalSymbolCount = allSymbols.length;
+    const matchingSymbolCount = filteredSymbols.length;
+    const displayedSymbolCount = displayedSymbols.length;
+    const totalCoverage = useMemo(() => allSymbols.reduce((sum, symbol) => sum + symbol.coverage, 0), [allSymbols]);
+    const matchingCoverage = useMemo(() => filteredSymbols.reduce((sum, symbol) => sum + symbol.coverage, 0), [filteredSymbols]);
+    const displayedCoverage = useMemo(() => displayedSymbols.reduce((sum, symbol) => sum + symbol.coverage, 0), [displayedSymbols]);
+    const emptyMessage = normalizedFilter ? 'No symbols match this filter.' : 'No symbols found in this span.';
+
+    if (!span) {
+        return <p className="memory-map-details-empty">Select a span to inspect its address range and size.</p>;
+    }
+
+    const filterInputId = `memory-map-symbol-filter-${span.id}`;
+    const countSummary = `Counts: Total ${totalSymbolCount} | Matches ${matchingSymbolCount} | Displayed ${displayedSymbolCount}`;
 
     return (
         <div>
@@ -424,10 +465,51 @@ const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | nul
                     </dd>
                 </div>
             </dl>
-            <dt>Top symbols</dt>
-            <dd>
-                <SymbolContributionTable symbols={topSymbols} emptyMessage="No symbols found in this span." />
-            </dd>
+            <div className="memory-map-symbols-section">
+                <div className="memory-map-symbols-header">
+                    <h5 className="memory-map-symbols-heading">Span symbols</h5>
+                    <div className="memory-map-symbols-summary">
+                        <span>{countSummary}</span>
+                        <span>
+                            Coverage: Total <SizeValue value={totalCoverage} /> | Matches <SizeValue value={matchingCoverage} /> | Displayed <SizeValue value={displayedCoverage} />
+                        </span>
+                    </div>
+                </div>
+                <div className="memory-map-symbols-controls">
+                    <div className="memory-map-symbols-filter">
+                        <label htmlFor={filterInputId}>Filter symbols</label>
+                        <input
+                            id={filterInputId}
+                            type="search"
+                            value={symbolFilter}
+                            onChange={handleFilterChange}
+                            placeholder="Filter by name"
+                            disabled={totalSymbolCount === 0}
+                        />
+                    </div>
+                    <div className="memory-map-symbols-limit" aria-label="Select number of symbols to display">
+                        <span className="memory-map-symbols-limit-label">Show</span>
+                        <div className="memory-map-symbols-chip-list">
+                            {SYMBOL_LIMIT_OPTIONS.map((option) => {
+                                const isActive = symbolLimit === option;
+                                return (
+                                    <button
+                                        key={option}
+                                        type="button"
+                                        className={`memory-map-symbols-chip${isActive ? ' memory-map-symbols-chip--active' : ''}`}
+                                        onClick={() => handleLimitChange(option)}
+                                        aria-pressed={isActive}
+                                        disabled={totalSymbolCount === 0}
+                                    >
+                                        {option}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+                <SymbolContributionTable symbols={displayedSymbols} emptyMessage={emptyMessage} />
+            </div>
         </div>
     );
 };

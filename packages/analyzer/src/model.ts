@@ -259,6 +259,27 @@ export interface HardwareBankLayout {
   spans: HardwareBankLayoutSpan[];
 }
 
+export type HardwareBankBlockSpanKind = 'block' | 'free' | 'reserved' | 'padding';
+
+export interface HardwareBankBlockLayoutSpan {
+  id: string;
+  label: string;
+  kind: HardwareBankBlockSpanKind;
+  sizeBytes: number;
+  startOffset: number;
+  endOffset: number;
+  windowId?: string;
+  blockId?: string;
+  reservationId?: string;
+  parentSpanId: string;
+  sectionIds?: string[];
+}
+
+export interface HardwareBankBlockLayout {
+  totalBytes: number;
+  spans: HardwareBankBlockLayoutSpan[];
+}
+
 export interface HardwareBankSummary {
   hardwareBankId: string;
   name: string;
@@ -272,6 +293,7 @@ export interface HardwareBankSummary {
   windowBreakdown: HardwareBankWindowBreakdown[];
   blockBreakdown: HardwareBankBlockBreakdown[];
   layout: HardwareBankLayout;
+  blockLayout: HardwareBankBlockLayout;
 }
 
 export interface TagUsageSummary {

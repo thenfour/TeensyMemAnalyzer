@@ -2,12 +2,14 @@ import { useMemo } from 'react';
 import type { Analysis, Summaries } from '@teensy-mem-explorer/analyzer';
 import { hashColor } from '../utils/color';
 
-export type MemoryMapSpanType = 'occupied' | 'free' | 'reserved';
+export type MemoryMapSpanType = 'occupied' | 'free' | 'reserved' | 'block' | 'padding';
+export type MemoryMapColumn = 'bank' | 'block';
 
 export interface MemoryMapSpan {
     id: string;
     bankId: string;
     groupId: string;
+    column: MemoryMapColumn;
     type: MemoryMapSpanType;
     label: string;
     start: number;
@@ -18,7 +20,17 @@ export interface MemoryMapSpan {
     color: string;
     blockIds?: string[];
     blockNames?: string[];
+    blockId?: string;
+    blockName?: string;
+    sectionIds?: string[];
     reservationId?: string;
+    parentSpanId?: string;
+}
+
+export interface MemoryMapColumnData {
+    id: string;
+    label: string;
+    spans: MemoryMapSpan[];
 }
 
 export interface MemoryMapBank {
@@ -27,7 +39,7 @@ export interface MemoryMapBank {
     start: number;
     end: number;
     size: number;
-    spans: MemoryMapSpan[];
+    columns: MemoryMapColumnData[];
 }
 
 export interface MemoryMapGroup {
@@ -37,7 +49,8 @@ export interface MemoryMapGroup {
 }
 
 const FREE_COLOR = 'hsl(215 30% 88%)';
-const RESERVED_COLOR = "#f80";//'hsl(24 92% 82%)';
+const RESERVED_COLOR = 'hsl(24 92% 82%)';
+const PADDING_COLOR = 'hsl(200 16% 85%)';
 
 export const useMemoryMapData = (
     analysis: Analysis | null,
@@ -63,7 +76,7 @@ export const useMemoryMapData = (
             const bankId = bankSummary.hardwareBankId;
             const bankLabel = bankSummary.name ?? bankId;
 
-            const spans: MemoryMapSpan[] = bankSummary.layout.spans.map((span) => {
+            const bankSpans: MemoryMapSpan[] = bankSummary.layout.spans.map((span) => {
                 let color: string;
                 if (span.kind === 'free') {
                     color = FREE_COLOR;
@@ -76,10 +89,12 @@ export const useMemoryMapData = (
                 const regionName = span.windowId ? windowLabelById.get(span.windowId) : undefined;
                 const blockIds = span.blockIds ?? [];
                 const blockNames = blockIds.map((blockId) => blockNameById.get(blockId) ?? blockId);
+                const spanId = span.id;
                 const memorySpan: MemoryMapSpan = {
-                    id: `${bankId}:${span.id}`,
+                    id: spanId,
                     bankId,
                     groupId: bankId,
+                    column: 'bank',
                     type: span.kind,
                     label: span.label,
                     start: span.startOffset,
@@ -97,13 +112,72 @@ export const useMemoryMapData = (
                 return memorySpan;
             });
 
+            const blockSpans: MemoryMapSpan[] = bankSummary.blockLayout.spans.map((span) => {
+                let color: string;
+                switch (span.kind) {
+                    case 'free':
+                        color = FREE_COLOR;
+                        break;
+                    case 'reserved':
+                        color = RESERVED_COLOR;
+                        break;
+                    case 'padding':
+                        color = PADDING_COLOR;
+                        break;
+                    case 'block':
+                    default:
+                        color = hashColor(`block:${bankId}:${span.blockId ?? span.id}`);
+                        break;
+                }
+
+                const regionName = span.windowId ? windowLabelById.get(span.windowId) : undefined;
+                const blockName = span.blockId ? blockNameById.get(span.blockId) ?? span.blockId : undefined;
+                const memorySpan: MemoryMapSpan = {
+                    id: span.id,
+                    bankId,
+                    groupId: bankId,
+                    column: 'block',
+                    type: span.kind === 'block' ? 'block' : span.kind,
+                    label: span.label,
+                    start: span.startOffset,
+                    end: span.endOffset,
+                    size: span.sizeBytes,
+                    regionId: span.windowId,
+                    regionName,
+                    color,
+                    blockId: span.blockId,
+                    blockName,
+                    sectionIds: span.sectionIds,
+                    reservationId: span.reservationId,
+                    parentSpanId: span.parentSpanId,
+                } satisfies MemoryMapSpan;
+
+                spansById.set(memorySpan.id, memorySpan);
+                return memorySpan;
+            });
+
             const bank: MemoryMapBank = {
                 id: bankId,
                 name: bankLabel,
                 start: 0,
                 end: bankSummary.layout.totalBytes,
                 size: bankSummary.layout.totalBytes,
-                spans,
+                columns: [
+                    {
+                        id: `${bankId}:bank` as const,
+                        label: 'Usage',
+                        spans: bankSpans,
+                    },
+                    ...(blockSpans.length > 0
+                        ? ([
+                              {
+                                  id: `${bankId}:blocks` as const,
+                                  label: 'Blocks',
+                                  spans: blockSpans,
+                              },
+                          ] as MemoryMapColumnData[])
+                        : []),
+                ],
             } satisfies MemoryMapBank;
 
             return {

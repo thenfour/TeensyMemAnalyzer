@@ -31,6 +31,7 @@ interface AssignmentRecord {
   blockId: string;
   windowId: string;
   addressType: AddressUsageKind;
+  address: number;
   size: number;
   reportTags: string[];
 }
@@ -258,7 +259,20 @@ const buildHardwareBankSummaries = (
       windowUsage.set(windowId, (windowUsage.get(windowId) ?? 0) + delta);
     });
 
+    const assignmentsByWindow = new Map<string, AssignmentRecord[]>();
+    relevantAssignments.forEach((record) => {
+      const entries = assignmentsByWindow.get(record.windowId);
+      if (entries) {
+        entries.push(record);
+      } else {
+        assignmentsByWindow.set(record.windowId, [record]);
+      }
+    });
+
     const blocksByWindow = new Map<string, string[]>();
+    const blockNameById = new Map(
+      analysis.config.logicalBlocks.map((block) => [block.id, block.name ?? block.id] as const),
+    );
     analysis.config.logicalBlocks.forEach((block) => {
       const existing = blocksByWindow.get(block.windowId);
       if (existing) {
@@ -269,31 +283,94 @@ const buildHardwareBankSummaries = (
     });
 
     const layoutSpans = [] as HardwareBankSummary['layout']['spans'];
+    const blockLayoutSpans = [] as HardwareBankSummary['blockLayout']['spans'];
+
     let cursor = 0;
+    let blockSpanCounter = 0;
 
     bank.windowIds.forEach((windowId) => {
-      const bytes = windowUsage.get(windowId) ?? 0;
-      if (bytes <= 0) {
+      const allocatedBytes = windowUsage.get(windowId) ?? 0;
+      if (allocatedBytes <= 0) {
         return;
       }
 
       const windowMeta = analysis.config.addressWindows.find((window) => window.id === windowId);
       const label = windowMeta?.name ?? windowId;
       const startOffset = cursor;
-      const endOffset = cursor + bytes;
+      const endOffset = startOffset + allocatedBytes;
+      const windowSpanId = `${bank.id}:${windowId}`;
 
       layoutSpans.push({
-        id: `${bank.id}:${windowId}`,
+        id: windowSpanId,
         label,
         kind: 'occupied',
-        sizeBytes: bytes,
+        sizeBytes: allocatedBytes,
         startOffset,
         endOffset,
         windowId,
         blockIds: blocksByWindow.get(windowId),
       });
 
+      const assignments = (assignmentsByWindow.get(windowId) ?? [])
+        .slice()
+        .sort((a, b) => a.address - b.address || a.size - b.size);
+
+      let windowCursor = startOffset;
+      let currentSpan: HardwareBankSummary['blockLayout']['spans'][number] | null = null;
+
+      assignments.forEach((assignment) => {
+        const spanSize = Math.max(assignment.size, 0);
+        if (spanSize === 0) {
+          return;
+        }
+
+        const spanStart = windowCursor;
+        const spanEnd = spanStart + spanSize;
+
+        if (currentSpan && currentSpan.blockId === assignment.blockId) {
+          currentSpan.sizeBytes += spanSize;
+          currentSpan.endOffset = spanEnd;
+          if (assignment.sectionId) {
+            (currentSpan.sectionIds ??= []).push(assignment.sectionId);
+          }
+        } else {
+          currentSpan = {
+            id: `${windowSpanId}:block:${blockSpanCounter}`,
+            label: blockNameById.get(assignment.blockId) ?? assignment.blockId,
+            kind: 'block',
+            sizeBytes: spanSize,
+            startOffset: spanStart,
+            endOffset: spanEnd,
+            windowId,
+            blockId: assignment.blockId,
+            parentSpanId: windowSpanId,
+            sectionIds: assignment.sectionId ? [assignment.sectionId] : undefined,
+          } satisfies HardwareBankSummary['blockLayout']['spans'][number];
+          blockLayoutSpans.push(currentSpan);
+          blockSpanCounter += 1;
+        }
+
+        windowCursor = spanEnd;
+      });
+
+      if (windowCursor < endOffset) {
+        const paddingSize = endOffset - windowCursor;
+        blockLayoutSpans.push({
+          id: `${windowSpanId}:padding:${blockSpanCounter}`,
+          label: 'Rounding adjustment',
+          kind: 'padding',
+          sizeBytes: paddingSize,
+          startOffset: windowCursor,
+          endOffset,
+          windowId,
+          parentSpanId: windowSpanId,
+        });
+        blockSpanCounter += 1;
+        windowCursor = endOffset;
+      }
+
       cursor = endOffset;
+      currentSpan = null;
     });
 
     const occupiedTotal = cursor;
@@ -305,14 +382,27 @@ const buildHardwareBankSummaries = (
     if (freeSpanBytes > 0) {
       const startOffset = cursor;
       const endOffset = startOffset + freeSpanBytes;
+      const freeSpanId = `${bank.id}:free`;
+
       layoutSpans.push({
-        id: `${bank.id}:free`,
+        id: freeSpanId,
         label: 'Free',
         kind: 'free',
         sizeBytes: freeSpanBytes,
         startOffset,
         endOffset,
       });
+
+      blockLayoutSpans.push({
+        id: `${freeSpanId}:detail`,
+        label: 'Free',
+        kind: 'free',
+        sizeBytes: freeSpanBytes,
+        startOffset,
+        endOffset,
+        parentSpanId: freeSpanId,
+      });
+      blockSpanCounter += 1;
       cursor = endOffset;
     }
 
@@ -324,9 +414,10 @@ const buildHardwareBankSummaries = (
     sortedReservations.forEach((reservation, index) => {
       const reservationStart = Math.max(reservation.startOffset, reservedCursor);
       const reservationEnd = reservationStart + reservation.sizeBytes;
+      const reservationSpanId = `${bank.id}:${reservation.id ?? `reservation-${index}`}`;
 
       layoutSpans.push({
-        id: `${bank.id}:${reservation.id ?? `reservation-${index}`}`,
+        id: reservationSpanId,
         label: reservation.label,
         kind: 'reserved',
         sizeBytes: reservation.sizeBytes,
@@ -336,15 +427,34 @@ const buildHardwareBankSummaries = (
         reservationId: reservation.id,
       });
 
+      blockLayoutSpans.push({
+        id: `${reservationSpanId}:detail`,
+        label: reservation.label,
+        kind: 'reserved',
+        sizeBytes: reservation.sizeBytes,
+        startOffset: reservationStart,
+        endOffset: reservationEnd,
+        windowId: reservation.windowId,
+        reservationId: reservation.id,
+        parentSpanId: reservationSpanId,
+      });
+      blockSpanCounter += 1;
+
       reservedCursor = reservationEnd;
     });
 
     layoutSpans.sort((a, b) => a.startOffset - b.startOffset);
+    blockLayoutSpans.sort((a, b) => a.startOffset - b.startOffset);
 
     const layout = {
       totalBytes: bank.capacityBytes,
       spans: layoutSpans,
     } satisfies HardwareBankSummary['layout'];
+
+    const blockLayout = {
+      totalBytes: bank.capacityBytes,
+      spans: blockLayoutSpans,
+    } satisfies HardwareBankSummary['blockLayout'];
 
     return {
       hardwareBankId: bank.id,
@@ -359,6 +469,7 @@ const buildHardwareBankSummaries = (
       windowBreakdown,
       blockBreakdown,
       layout,
+      blockLayout,
     };
   });
 };
@@ -398,6 +509,7 @@ export const generateSummaries = (analysis: Analysis): Summaries => {
         blockId: assignment.blockId,
         windowId: assignment.windowId,
         addressType: assignment.addressType,
+        address: assignment.address,
         size: assignment.size,
         reportTags: assignment.reportTags,
       });

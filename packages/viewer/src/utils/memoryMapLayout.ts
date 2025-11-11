@@ -14,6 +14,14 @@ export interface MemoryMapSpanLayout {
     height: number;
 }
 
+export interface MemoryMapProjector {
+    spanId: string;
+    start: number;
+    end: number;
+    y: number;
+    height: number;
+}
+
 const EPSILON = 1e-3;
 
 interface SpanMetric {
@@ -32,11 +40,11 @@ interface SpanMetric {
 export const computeMemoryMapSpanLayout = (
     spans: MemoryMapSpan[],
     options: MemoryMapLayoutOptions,
-): MemoryMapSpanLayout[] => {
+): { layouts: MemoryMapSpanLayout[]; projector: MemoryMapProjector[] } => {
     const { bankStart, bankEnd, totalHeight, padding, minSpanHeight } = options;
 
     if (spans.length === 0) {
-        return [];
+        return { layouts: [], projector: [] };
     }
 
     const availableHeight = Math.max(totalHeight - padding * 2, 0);
@@ -103,12 +111,22 @@ export const computeMemoryMapSpanLayout = (
     const bottomLimit = padding + availableHeight;
     let cursor = padding;
 
-    return sorted.map((metric) => {
+    const projector: MemoryMapProjector[] = [];
+
+    const layouts = sorted.map((metric) => {
         const height = Math.max(metric.height, 0);
         const y = Math.min(Math.max(metric.baseY, cursor), bottomLimit);
         const remaining = Math.max(bottomLimit - y, 0);
         const clampedHeight = Math.min(height, remaining);
         cursor = y + clampedHeight;
+
+        projector.push({
+            spanId: metric.span.id,
+            start: metric.span.start,
+            end: metric.span.end,
+            y,
+            height: clampedHeight,
+        });
 
         return {
             span: metric.span,
@@ -116,4 +134,6 @@ export const computeMemoryMapSpanLayout = (
             height: clampedHeight,
         };
     });
+
+    return { layouts, projector };
 };

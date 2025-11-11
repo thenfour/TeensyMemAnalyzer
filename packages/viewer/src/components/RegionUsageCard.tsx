@@ -78,7 +78,7 @@ const RegionUsageCard = ({ regionUsage, lastRunCompletedAt }: RegionUsageCardPro
     return (
         <section className="summary-card region-card">
             <div className="summary-header">
-                <h2>Regions</h2>
+                <h2>Address Windows</h2>
                 <div className="summary-meta">
                     {lastRunCompletedAt ? (
                         <span className="summary-updated">Based on {lastRunCompletedAt.toLocaleString()}</span>
@@ -92,7 +92,7 @@ const RegionUsageCard = ({ regionUsage, lastRunCompletedAt }: RegionUsageCardPro
                     {regionUsage.map((usage) => renderUsageBar(usage))}
                 </div>
             ) : (
-                <p className="summary-placeholder">Run an analysis to see per-region usage.</p>
+                <p className="summary-placeholder">Run an analysis to see per-window usage.</p>
             )}
         </section>
     );

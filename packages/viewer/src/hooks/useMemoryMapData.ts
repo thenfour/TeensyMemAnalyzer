@@ -1,19 +1,10 @@
 import { useMemo } from 'react';
-import type {
-    Analysis,
-    Region,
-    RegionSummary,
-    RuntimeBankSummary,
-    RuntimeGroupSummary,
-    Section,
-    SectionCategory,
-} from '@teensy-mem-explorer/analyzer';
+import type { Analysis, Summaries } from '@teensy-mem-explorer/analyzer';
 import { hashColor } from '../utils/color';
-import { MEMORY_CATEGORY_LABEL_BY_KEY, type MemoryCategoryKey } from '../constants/memoryCategories';
 
 export type MemoryMapAggregation = 'region' | 'category';
 
-export type MemoryMapSpanType = 'occupied' | 'free' | 'reserved';
+export type MemoryMapSpanType = 'occupied' | 'free';
 
 export interface MemoryMapSpan {
     id: string;
@@ -26,10 +17,8 @@ export interface MemoryMapSpan {
     size: number;
     regionId?: string;
     regionName?: string;
-    category?: SectionCategory;
+    category?: string;
     categoryLabel?: string;
-    reservedName?: string;
-    mergedPaddingBytes?: number;
     color: string;
 }
 
@@ -48,415 +37,148 @@ export interface MemoryMapGroup {
     banks: MemoryMapBank[];
 }
 
-interface RegionContext {
-    region: Region;
-    summary?: RegionSummary;
-    sections: Section[];
-}
-
-interface OccupiedSlice {
-    id: string;
-    start: number;
-    end: number;
-    label: string;
-    category?: SectionCategory;
-    categoryKey?: MemoryCategoryKey;
-    regionId: string;
-    regionName?: string;
-    mergedPaddingBytes: number;
-}
-
-const GAP_MERGE_THRESHOLD = 256; // bytes
-
-const CATEGORY_KEY_BY_SECTION: Record<SectionCategory, MemoryCategoryKey> = {
-    code: 'Code',
-    code_fast: 'Fast Code',
-    rodata: 'Const Data',
-    data_init: 'Init Data',
-    bss: 'BSS',
-    dma: 'DMA',
-    other: 'Other',
-};
-
-const humanizeCategory = (category: SectionCategory): string => {
-    const key = CATEGORY_KEY_BY_SECTION[category] ?? 'Other';
-    return MEMORY_CATEGORY_LABEL_BY_KEY[key] ?? key;
-};
-
-const clampSpan = (start: number, end: number, region: Region): { start: number; end: number } => {
-    const regionStart = region.start;
-    const regionEnd = region.start + region.size;
-    return {
-        start: Math.max(start, regionStart),
-        end: Math.min(end, regionEnd),
-    };
-};
-
-const buildCategorySlices = (region: Region, sections: Section[]): OccupiedSlice[] => {
-    const allocSections = sections
-        .filter((section) => section.execRegionId === region.id && section.flags.alloc && section.size > 0)
-        .filter((section) => section.vmaStart !== undefined && Number.isFinite(section.vmaStart));
-
-    if (allocSections.length === 0) {
-        return [];
-    }
-
-    const sorted = [...allocSections].sort((a, b) => (a.vmaStart ?? 0) - (b.vmaStart ?? 0));
-
-    const slices: OccupiedSlice[] = [];
-    let current: OccupiedSlice | null = null;
-
-    sorted.forEach((section, index) => {
-        const start = section.vmaStart ?? region.start;
-        const end = start + section.size;
-        const category = section.category;
-        const categoryKey = CATEGORY_KEY_BY_SECTION[category] ?? 'Other';
-        const label = MEMORY_CATEGORY_LABEL_BY_KEY[categoryKey] ?? categoryKey;
-
-        if (!current) {
-            current = {
-                id: `${region.id}:cat:${category}:${index}`,
-                start,
-                end,
-                label,
-                category,
-                categoryKey,
-                regionId: region.id,
-                regionName: region.name,
-                mergedPaddingBytes: 0,
-            };
-            return;
-        }
-
-        if (current.category === category) {
-            const gap = start - current.end;
-            if (gap <= GAP_MERGE_THRESHOLD) {
-                if (gap > 0) {
-                    current.mergedPaddingBytes += gap;
-                }
-                current.end = Math.max(current.end, end);
-                return;
-            }
-        }
-
-        slices.push(current);
-        current = {
-            id: `${region.id}:cat:${category}:${index}`,
-            start,
-            end,
-            label,
-            category,
-            categoryKey,
-            regionId: region.id,
-            regionName: region.name,
-            mergedPaddingBytes: 0,
-        };
-    });
-
-    if (current) {
-        slices.push(current);
-    }
-
-    return slices;
-};
-
-const buildRegionSlice = (
-    region: Region,
-    occupiedSlices: OccupiedSlice[],
-    reservedSlices: OccupiedSlice[],
+const buildSpansForWindow = (
     groupId: string,
-    bankId: string,
-    aggregation: MemoryMapAggregation,
-): MemoryMapSpan[] => {
-    const regionStart = region.start;
-    const regionEnd = region.start + region.size;
-    const reservedIds = new Set(reservedSlices.map((slice) => slice.id));
-
-    const slices = [...occupiedSlices, ...reservedSlices].map((slice) => {
-        const { start, end } = clampSpan(slice.start, slice.end, region);
+    windowId: string,
+    windowLabel: string,
+    windowSummary: Summaries['byWindow'][number] | undefined,
+    blockNameById: Map<string, string>,
+): MemoryMapBank => {
+    if (!windowSummary || windowSummary.placements.length === 0) {
         return {
-            ...slice,
-            start,
-            end,
-        };
-    });
-
-    const sorted = slices.sort((a, b) => a.start - b.start);
-
-    const spans: MemoryMapSpan[] = [];
-    let cursor = regionStart;
-
-    sorted.forEach((slice) => {
-        if (slice.start > regionEnd) {
-            return;
-        }
-        if (slice.end <= cursor) {
-            return;
-        }
-
-        if (slice.start > cursor) {
-            spans.push({
-                id: `${bankId}:${region.id}:free:${aggregation}:${cursor}`,
-                bankId,
-                groupId,
-                type: 'free',
-                label: 'Free',
-                start: cursor,
-                end: slice.start,
-                size: slice.start - cursor,
-                regionId: region.id,
-                regionName: region.name,
-                color: 'hsl(215 30% 88%)',
-            });
-        }
-
-        const sliceEnd = Math.min(slice.end, regionEnd);
-        const sliceType = reservedIds.has(slice.id) ? 'reserved' : 'occupied';
-        const label = slice.label;
-        const colorKey =
-            sliceType === 'reserved'
-                ? `reserved:${slice.label}`
-                : `occupied:${slice.categoryKey ?? slice.label}`;
-
-        spans.push({
-            id: `${bankId}:${slice.id}:${aggregation}`,
-            bankId,
-            groupId,
-            type: sliceType,
-            label,
-            start: slice.start,
-            end: sliceEnd,
-            size: sliceEnd - slice.start,
-            regionId: slice.regionId,
-            regionName: slice.regionName,
-            category: slice.category,
-            categoryLabel: slice.category ? humanizeCategory(slice.category) : undefined,
-            reservedName: sliceType === 'reserved' ? slice.label : undefined,
-            mergedPaddingBytes: slice.mergedPaddingBytes > 0 ? slice.mergedPaddingBytes : undefined,
-            color: sliceType === 'reserved' ? 'hsl(43 93% 70%)' : hashColor(colorKey),
-        });
-
-        cursor = Math.max(cursor, sliceEnd);
-    });
-
-    if (cursor < regionEnd) {
-        spans.push({
-            id: `${bankId}:${region.id}:free:${aggregation}:${cursor}`,
-            bankId,
-            groupId,
-            type: 'free',
-            label: 'Free',
-            start: cursor,
-            end: regionEnd,
-            size: regionEnd - cursor,
-            regionId: region.id,
-            regionName: region.name,
-            color: 'hsl(215 30% 88%)',
-        });
-    }
-
-    return spans;
-};
-
-const buildReservedSlices = (region: Region): OccupiedSlice[] => {
-    if (!region.reserved || region.reserved.length === 0) {
-        return [];
-    }
-
-    return region.reserved.map((entry, index) => ({
-        id: `${region.id}:reserved:${index}`,
-        start: entry.start,
-        end: entry.start + entry.size,
-        label: entry.name,
-        regionId: region.id,
-        regionName: region.name,
-        mergedPaddingBytes: 0,
-    }));
-};
-
-const buildRegionAggregation = (
-    regionContext: RegionContext,
-    groupId: string,
-    bankId: string,
-): MemoryMapSpan[] => {
-    const { region, sections } = regionContext;
-    const occupiedSlices = buildCategorySlices(region, sections);
-    const reservedSlices = buildReservedSlices(region);
-
-    if (occupiedSlices.length === 0 && reservedSlices.length === 0) {
-        const regionStart = region.start;
-        const regionEnd = region.start + region.size;
-        return [
-            {
-                id: `${bankId}:${region.id}:free-all:region`,
-                bankId,
-                groupId,
-                type: 'free',
-                label: 'Free',
-                start: regionStart,
-                end: regionEnd,
-                size: region.size,
-                regionId: region.id,
-                regionName: region.name,
-                color: 'hsl(215 30% 88%)',
+            id: windowId,
+            name: windowLabel,
+            start: 0,
+            end: 0,
+            size: 0,
+            spans: {
+                region: [],
+                category: [],
             },
-        ];
+        } satisfies MemoryMapBank;
     }
 
-    return buildRegionSlice(region, occupiedSlices, reservedSlices, groupId, bankId, 'region');
-};
+    const sortedPlacements = windowSummary.placements
+        .slice()
+        .sort((a, b) => a.start - b.start || a.size - b.size);
 
-const buildCategoryAggregation = (
-    regionContext: RegionContext,
-    groupId: string,
-    bankId: string,
-): MemoryMapSpan[] => {
-    const { region, sections } = regionContext;
-    const categorySlices = buildCategorySlices(region, sections);
-    const reservedSlices = buildReservedSlices(region);
+    const regionSpans: MemoryMapSpan[] = [];
+    const categorySpans: MemoryMapSpan[] = [];
 
-    const spans = buildRegionSlice(region, categorySlices, reservedSlices, groupId, bankId, 'category');
+    let cursor = sortedPlacements[0].start;
+    let bankStart = cursor;
+    let bankEnd = cursor;
 
-    return spans;
-};
-
-const collectSectionsByRegion = (sections: Section[]): Map<string, Section[]> => {
-    const byRegion = new Map<string, Section[]>();
-    sections.forEach((section) => {
-        if (!section.execRegionId) {
-            return;
+    sortedPlacements.forEach((placement, index) => {
+        if (placement.start > cursor) {
+            const gapSpan: MemoryMapSpan = {
+                id: `${windowId}:gap:${index}`,
+                bankId: windowId,
+                groupId,
+                type: 'free',
+                label: 'Gap',
+                start: cursor,
+                end: placement.start,
+                size: placement.start - cursor,
+                regionId: windowId,
+                regionName: windowLabel,
+                color: 'hsl(215 30% 88%)',
+            } satisfies MemoryMapSpan;
+            regionSpans.push(gapSpan);
+            cursor = placement.start;
         }
-        const list = byRegion.get(section.execRegionId) ?? [];
-        list.push(section);
-        byRegion.set(section.execRegionId, list);
+
+        const placementEnd = placement.start + placement.size;
+        const blockId = placement.blockId ?? placement.sectionId ?? `block-${index}`;
+        const blockLabel = blockNameById.get(placement.blockId ?? '') ?? placement.blockId ?? placement.sectionId ?? `Section ${index + 1}`;
+        const regionSpan: MemoryMapSpan = {
+            id: `${windowId}:placement:${index}`,
+            bankId: windowId,
+            groupId,
+            type: 'occupied',
+            label: blockLabel,
+            start: placement.start,
+            end: placementEnd,
+            size: placement.size,
+            regionId: windowId,
+            regionName: windowLabel,
+            category: placement.blockId,
+            categoryLabel: placement.blockId ? blockLabel : undefined,
+            color: hashColor(`block:${blockId}`),
+        } satisfies MemoryMapSpan;
+        regionSpans.push(regionSpan);
+
+        const categoryLabel = placement.addressType === 'load' ? 'Load' : blockLabel;
+        categorySpans.push({
+            ...regionSpan,
+            id: `${windowId}:category:${index}`,
+            label: categoryLabel,
+            color: hashColor(`category:${categoryLabel}`),
+        });
+
+        cursor = Math.max(cursor, placementEnd);
+        bankEnd = Math.max(bankEnd, placementEnd);
     });
-    return byRegion;
+
+    const sortedRegionSpans = regionSpans.sort((a, b) => a.start - b.start);
+    const sortedCategorySpans = categorySpans.sort((a, b) => a.start - b.start);
+
+    return {
+    id: windowId,
+        name: windowLabel,
+        start: bankStart,
+        end: bankEnd,
+        size: Math.max(bankEnd - bankStart, 0),
+        spans: {
+            region: sortedRegionSpans,
+            category: sortedCategorySpans,
+        },
+    } satisfies MemoryMapBank;
 };
 
-const createRegionContext = (
-    region: Region,
-    regionSummaryMap: Map<string, RegionSummary>,
-    sectionsByRegion: Map<string, Section[]>,
-): RegionContext => ({
-    region,
-    summary: regionSummaryMap.get(region.id),
-    sections: sectionsByRegion.get(region.id) ?? [],
-});
-
-const uniqueRegionIdsForBank = (bank: RuntimeBankSummary): string[] => {
-    const ids = new Set<string>();
-    bank.contributors.forEach((contributor) => {
-        ids.add(contributor.regionId);
-    });
-    return Array.from(ids.values());
-};
-
-const sortRegions = (regions: Region[]): Region[] => [...regions].sort((a, b) => a.start - b.start);
-
-export const useMemoryMapData = (analysis: Analysis | null): {
+export const useMemoryMapData = (
+    analysis: Analysis | null,
+    summaries: Summaries | null,
+): {
     groups: MemoryMapGroup[];
     spansById: Map<string, MemoryMapSpan>;
 } =>
     useMemo(() => {
-        if (!analysis) {
+        if (!analysis || !summaries) {
             return { groups: [], spansById: new Map() };
         }
 
-        const regionSummaryEntries: Array<[string, RegionSummary]> = (analysis.summaries.byRegion ?? []).map(
-            (summary) => [summary.regionId, summary],
+        const windowLabelById = new Map(
+            analysis.config.addressWindows.map((window) => [window.id, window.name ?? window.id] as const),
         );
-        const regionSummaryMap = new Map<string, RegionSummary>(regionSummaryEntries);
-
-        const regionMap = new Map<string, Region>();
-        analysis.regions.forEach((region) => {
-            regionMap.set(region.id, region);
-        });
-
-        const sectionsByRegion = collectSectionsByRegion(analysis.sections ?? []);
-
-        const bankSummaries = new Map<string, RuntimeBankSummary>();
-        (analysis.summaries.runtimeBanks ?? []).forEach((bank) => {
-            bankSummaries.set(bank.bankId, bank);
-        });
+        const blockNameById = new Map(
+            analysis.config.logicalBlocks.map((block) => [block.id, block.name ?? block.id] as const),
+        );
+        const windowSummaryById = new Map(
+            summaries.byWindow.map((entry) => [entry.windowId, entry] as const),
+        );
 
         const spansById = new Map<string, MemoryMapSpan>();
         const groups: MemoryMapGroup[] = [];
 
-    const runtimeGroups = (analysis.summaries.runtimeGroups ?? []).slice();
-    runtimeGroups.sort((a, b) => a.name.localeCompare(b.name));
+        analysis.config.hardwareBanks.forEach((hardwareBank) => {
+            const banks: MemoryMapBank[] = hardwareBank.windowIds.map((windowId) => {
+                const windowSummary = windowSummaryById.get(windowId);
+                const windowLabel = windowLabelById.get(windowId) ?? windowId;
+                const bank = buildSpansForWindow(hardwareBank.id, windowId, windowLabel, windowSummary, blockNameById);
 
-        runtimeGroups.forEach((group) => {
-            const memberBanks = group.bankIds
-                .map((bankId) => bankSummaries.get(bankId))
-                .filter((value): value is RuntimeBankSummary => Boolean(value));
+                bank.spans.region.forEach((span) => spansById.set(span.id, span));
+                bank.spans.category.forEach((span) => spansById.set(span.id, span));
 
-            if (memberBanks.length === 0) {
-                return;
-            }
-
-            const banks: MemoryMapBank[] = memberBanks.map((bank) => {
-                const regionIds = uniqueRegionIdsForBank(bank).filter((id) => regionMap.has(id));
-                const regions = sortRegions(regionIds.map((id) => regionMap.get(id) as Region));
-
-                if (regions.length === 0) {
-                    return {
-                        id: bank.bankId,
-                        name: bank.name,
-                        start: 0,
-                        end: 0,
-                        size: 0,
-                        spans: {
-                            region: [],
-                            category: [],
-                        },
-                    };
-                }
-
-                const regionContexts = regions.map((region) =>
-                    createRegionContext(region, regionSummaryMap, sectionsByRegion),
-                );
-                const start = Math.min(...regions.map((region) => region.start));
-                const end = Math.max(...regions.map((region) => region.start + region.size));
-
-                const regionSpans: MemoryMapSpan[] = [];
-                const categorySpans: MemoryMapSpan[] = [];
-
-                regionContexts.forEach((context) => {
-                    const contextRegionSpans = buildRegionAggregation(context, group.groupId, bank.bankId);
-                    const contextCategorySpans = buildCategoryAggregation(context, group.groupId, bank.bankId);
-
-                    contextRegionSpans.forEach((span) => {
-                        regionSpans.push(span);
-                        spansById.set(span.id, span);
-                    });
-                    contextCategorySpans.forEach((span) => {
-                        categorySpans.push(span);
-                        spansById.set(span.id, span);
-                    });
-                });
-
-                const sortedRegionSpans = [...regionSpans].sort((a, b) => a.start - b.start);
-                const sortedCategorySpans = [...categorySpans].sort((a, b) => a.start - b.start);
-
-                return {
-                    id: bank.bankId,
-                    name: bank.name,
-                    start,
-                    end,
-                    size: end - start,
-                    spans: {
-                        region: sortedRegionSpans,
-                        category: sortedCategorySpans,
-                    },
-                };
+                return bank;
             });
 
             groups.push({
-                id: group.groupId,
-                name: group.name,
+                id: hardwareBank.id,
+                name: hardwareBank.name ?? hardwareBank.id,
                 banks,
             });
         });
 
         return { groups, spansById };
-    }, [analysis]);
+    }, [analysis, summaries]);

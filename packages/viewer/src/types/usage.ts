@@ -1,5 +1,3 @@
-import type { RegionKind } from '@teensy-mem-explorer/analyzer';
-
 export type RangeBounds = {
     start: number;
     end: number;
@@ -10,7 +8,7 @@ export type AddressRangeMeta = {
     total: RangeBounds;
     regionId?: string;
     regionName?: string;
-    regionKind?: RegionKind;
+    regionKind?: string;
     regionKindLabel?: string;
 };
 

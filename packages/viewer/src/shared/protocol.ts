@@ -1,4 +1,8 @@
-import type { Analysis } from '@teensy-mem-explorer/analyzer';
+import type {
+  Analysis,
+  Summaries,
+  TeensySizeReportSummary,
+} from '@teensy-mem-explorer/analyzer';
 
 export type ServerLifecycleState = 'idle' | 'watching' | 'running' | 'error';
 
@@ -29,6 +33,8 @@ export interface ServerConfig {
 
 export interface AnalysisBroadcastPayload {
   analysis: Analysis;
+  summaries: Summaries;
+  report?: TeensySizeReportSummary;
   generatedAt: string;
 }
 

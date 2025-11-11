@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { Analysis } from '@teensy-mem-explorer/analyzer';
+import type { Analysis, Summaries } from '@teensy-mem-explorer/analyzer';
 import { SizeValue } from './SizeValue';
 import AddressValue from './AddressValue';
 import { useMemoryMapData, type MemoryMapAggregation, type MemoryMapSpan } from '../hooks/useMemoryMapData';
@@ -9,6 +9,7 @@ import { computeMemoryMapSpanLayout } from '../utils/memoryMapLayout';
 
 interface MemoryMapCardProps {
     analysis: Analysis | null;
+    summaries: Summaries | null;
     lastRunCompletedAt: Date | null;
 }
 
@@ -126,12 +127,10 @@ const MemoryMapBankVisualization = ({
     );
 };
 
-const MemoryMapCard = ({ analysis, lastRunCompletedAt }: MemoryMapCardProps): JSX.Element | null => {
-    const { groups, spansById } = useMemoryMapData(analysis);
+const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCardProps): JSX.Element | null => {
+    const { groups, spansById } = useMemoryMapData(analysis, summaries);
     const [aggregation, setAggregation] = useState<MemoryMapAggregation>('region');
     const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
-
-    console.log(analysis);
 
     const memoryMapStyle = useMemo<MemoryMapStyle>(() => ({
         '--memory-map-bank-width': `${MEMORY_MAP_DIMENSIONS.width}px`,
@@ -231,12 +230,6 @@ const MemoryMapCard = ({ analysis, lastRunCompletedAt }: MemoryMapCardProps): JS
                                 </dd>
                             </div>
                             <div>
-                                <dt>Padding</dt>
-                                <dd>
-                                    <SizeValue value={selectedSpan.mergedPaddingBytes} />
-                                </dd>
-                            </div>
-                            <div>
                                 <dt>Start</dt>
                                 <dd>
                                     <AddressValue value={selectedSpan.start} />
@@ -250,13 +243,7 @@ const MemoryMapCard = ({ analysis, lastRunCompletedAt }: MemoryMapCardProps): JS
                             </div>
                             <div>
                                 <dt>Type</dt>
-                                <dd>
-                                    {selectedSpan.type === 'occupied'
-                                        ? 'Occupied'
-                                        : selectedSpan.type === 'reserved'
-                                            ? 'Reserved'
-                                            : 'Free'}
-                                </dd>
+                                <dd>{selectedSpan.type === 'occupied' ? 'Occupied' : 'Free'}</dd>
                             </div>
                         </dl>
                     ) : (

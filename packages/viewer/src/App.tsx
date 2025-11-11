@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import * as teensySizeModule from '@teensy-mem-explorer/analyzer/analysis/reports/teensy-size';
-import type { Analysis, TeensySizeReportSummary } from '@teensy-mem-explorer/analyzer';
+import {
+    type Analysis,
+    type Summaries,
+    type TeensySizeReportSummary,
+    type TeensySizeReportEntrySummary,
+} from '@teensy-mem-explorer/analyzer';
 import type {
+    AnalysisBroadcastPayload,
     HealthResponse,
     ServerConfig,
     ServerMessage,
@@ -12,24 +17,67 @@ import TeensySizeCard, { type TeensySizePanel } from './components/TeensySizeCar
 import RegionUsageCard from './components/RegionUsageCard';
 import MemoryMapCard from './components/MemoryMapCard';
 import TreemapCard from './components/TreemapCard';
-import { useRegionUsage } from './hooks/useRegionUsage';
 import RuntimeBankCard from './components/RuntimeBankCard';
+import { useRegionUsage } from './hooks/useRegionUsage';
 
-const { calculateTeensySizeReport } = teensySizeModule as {
-    calculateTeensySizeReport: (analysis: Analysis) => TeensySizeReportSummary;
+type LatestAnalysisBundle = {
+    analysis: Analysis;
+    summaries: Summaries;
+    report?: TeensySizeReportSummary;
+    generatedAt: string;
 };
 
 type AnalysisSummaryState =
     | {
         kind: 'server';
         targetName: string;
-        flashUsed?: number;
-        ramUsed?: number;
+        runtimeBytes?: number;
+        loadImageBytes?: number;
+        generatedAt?: string;
     }
     | {
         kind: 'manual';
         message: string;
+        targetName?: string;
+        runtimeBytes?: number;
+        loadImageBytes?: number;
     };
+
+const buildBundle = (payload: AnalysisBroadcastPayload): LatestAnalysisBundle => ({
+    analysis: payload.analysis,
+    summaries: payload.summaries,
+    report: payload.report,
+    generatedAt: payload.generatedAt,
+});
+
+const parseBundleFromJson = (input: unknown): LatestAnalysisBundle | null => {
+    if (!input || typeof input !== 'object') {
+        return null;
+    }
+
+    const candidate = input as Partial<AnalysisBroadcastPayload> & { generatedAt?: string };
+    if (!candidate.analysis || !candidate.summaries) {
+        return null;
+    }
+
+    const generatedAt = typeof candidate.generatedAt === 'string' ? candidate.generatedAt : new Date().toISOString();
+    return {
+        analysis: candidate.analysis,
+        summaries: candidate.summaries,
+        report: candidate.report,
+        generatedAt,
+    } satisfies LatestAnalysisBundle;
+};
+
+const getBucketValue = (
+    entry: TeensySizeReportEntrySummary | undefined,
+    bucket: string,
+): number => entry?.bucketTotals?.[bucket] ?? 0;
+
+const sumBucketValues = (
+    entry: TeensySizeReportEntrySummary | undefined,
+    buckets: string[],
+): number => buckets.reduce((total, bucket) => total + getBucketValue(entry, bucket), 0);
 
 const App = (): JSX.Element => {
     const { formatValue } = useSizeFormat();
@@ -40,33 +88,39 @@ const App = (): JSX.Element => {
         'connecting',
     );
     const [connectionError, setConnectionError] = useState<string | null>(null);
-    const [config, setConfig] = useState<ServerConfig>({
-    });
-    const [pendingConfig, setPendingConfig] = useState<ServerConfig>({
-    });
+    const [config, setConfig] = useState<ServerConfig>({});
+    const [pendingConfig, setPendingConfig] = useState<ServerConfig>({});
     const [isSavingConfig, setIsSavingConfig] = useState(false);
     const [configError, setConfigError] = useState<string | null>(null);
     const [isTriggeringRun, setIsTriggeringRun] = useState(false);
     const [runError, setRunError] = useState<string | null>(null);
-    const [latestAnalysis, setLatestAnalysis] = useState<Analysis | null>(null);
-    const [teensySizeReport, setTeensySizeReport] = useState<TeensySizeReportSummary | null>(null);
-    const [teensySizeError, setTeensySizeError] = useState<string | null>(null);
+    const [latestBundle, setLatestBundle] = useState<LatestAnalysisBundle | null>(null);
+
+    const latestAnalysis = latestBundle?.analysis ?? null;
+    const latestSummaries = latestBundle?.summaries ?? null;
+    const latestReport = latestBundle?.report;
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
         const file = event.target.files?.[0];
         if (!file) {
-            setAnalysisSummary(null);
             return;
         }
 
         try {
             const text = await file.text();
-            // For now just parse and summarize top-level keys to validate ingestion.
-            const json = JSON.parse(text) as Record<string, unknown>;
-            const keys = Object.keys(json).sort();
+            const json = JSON.parse(text) as unknown;
+            const bundle = parseBundleFromJson(json);
+            if (!bundle) {
+                throw new Error('File did not contain an analysis bundle.');
+            }
+
+            setLatestBundle(bundle);
             setAnalysisSummary({
                 kind: 'manual',
-                message: `[Manual] Loaded analysis with top-level keys: ${keys.join(', ')}`,
+                message: `[Manual] Loaded analysis from ${file.name}`,
+                targetName: bundle.analysis.target.name,
+                runtimeBytes: bundle.summaries?.totals?.runtimeBytes,
+                loadImageBytes: bundle.summaries?.totals?.loadImageBytes,
             });
         } catch (error) {
             console.error('Failed to parse analysis JSON', error);
@@ -90,7 +144,6 @@ const App = (): JSX.Element => {
                 if (isMounted) {
                     setHealth(data);
                     setServerStatus(data.state);
-                    // Config will arrive via websocket handshake; if not, keep pending empty.
                     setConnectionState('connected');
                 }
             } catch (error) {
@@ -140,23 +193,16 @@ const App = (): JSX.Element => {
                         setConfig(message.payload ?? {});
                         setPendingConfig(message.payload ?? {});
                     } else if (message.type === 'analysis') {
-                        setLatestAnalysis(message.payload.analysis);
-
-                        const totals = message.payload.analysis.summaries?.totals;
-                        const targetName = message.payload.analysis.target.name;
-                        if (totals) {
-                            setAnalysisSummary({
-                                kind: 'server',
-                                targetName,
-                                flashUsed: totals.flashUsed,
-                                ramUsed: totals.ramUsed,
-                            });
-                        } else {
-                            setAnalysisSummary({
-                                kind: 'server',
-                                targetName,
-                            });
-                        }
+                        const bundle = buildBundle(message.payload);
+                        setLatestBundle(bundle);
+                        const totals = bundle.summaries?.totals;
+                        setAnalysisSummary({
+                            kind: 'server',
+                            targetName: bundle.analysis.target.name,
+                            runtimeBytes: totals?.runtimeBytes,
+                            loadImageBytes: totals?.loadImageBytes,
+                            generatedAt: bundle.generatedAt,
+                        });
                     }
                 } catch (error) {
                     console.warn('Failed to parse server message', error);
@@ -184,24 +230,6 @@ const App = (): JSX.Element => {
             socket?.close();
         };
     }, []);
-
-    useEffect(() => {
-        if (!latestAnalysis) {
-            setTeensySizeReport(null);
-            setTeensySizeError(null);
-            return;
-        }
-
-        try {
-            const report = calculateTeensySizeReport(latestAnalysis);
-            setTeensySizeReport(report);
-            setTeensySizeError(null);
-        } catch (error) {
-            console.warn('Failed to compute teensy_size report', error);
-            setTeensySizeReport(null);
-            setTeensySizeError(error instanceof Error ? error.message : 'Unknown calculator failure');
-        }
-    }, [latestAnalysis]);
 
     const statusLabel = useMemo(() => {
         if (!serverStatus) {
@@ -295,63 +323,68 @@ const App = (): JSX.Element => {
 
     const { runtimeBanks: runtimeBankUsage, regions: regionUsage } = useRegionUsage({
         analysis: latestAnalysis,
+        summaries: latestSummaries,
         formatValue,
-        includeRuntimeBanks: true,
     });
 
-    const teensySizePanels = useMemo<TeensySizePanel[]>(
-        () => {
-            if (!teensySizeReport) {
-                return [];
-            }
+    const teensySizePanels = useMemo<TeensySizePanel[]>(() => {
+        if (!latestReport) {
+            return [];
+        }
 
-            const panels: TeensySizePanel[] = [];
+        const panels: TeensySizePanel[] = [];
+        const report = latestReport;
 
-            if (teensySizeReport.flash) {
-                const { code, data, headers, freeForFiles } = teensySizeReport.flash;
-                panels.push({
-                    title: 'FLASH',
-                    rows: [
-                        { label: 'Code', value: code },
-                        { label: 'Data', value: data },
-                        { label: 'Headers', value: headers },
-                        { label: 'Free for files', value: freeForFiles },
-                    ],
-                });
-            }
+        if (report.flash) {
+            const flash = report.flash;
+            const flashCode = getBucketValue(flash, 'code');
+            const flashData = getBucketValue(flash, 'data');
+            const flashHeaders = getBucketValue(flash, 'headers');
+            panels.push({
+                title: 'FLASH',
+                rows: [
+                    { label: 'Code', value: flashCode },
+                    { label: 'Data', value: flashData },
+                    { label: 'Headers', value: flashHeaders },
+                    { label: 'Free for files', value: flash.freeBytes },
+                ],
+            });
+        }
 
-            if (teensySizeReport.ram1) {
-                const { code, variables, padding, freeForLocalVariables } = teensySizeReport.ram1;
-                panels.push({
-                    title: 'RAM1',
-                    rows: [
-                        { label: 'Code (ITCM)', value: code },
-                        { label: 'Variables (DTCM)', value: variables },
-                        { label: 'Padding', value: padding },
-                        { label: 'Free for local variables', value: freeForLocalVariables },
-                    ],
-                });
-            }
+        if (report.ram1) {
+            const ram1 = report.ram1;
+            const variables = sumBucketValues(ram1, ['data', 'bss', 'noinit']);
+            const codeBytes = ram1.codeBytes ?? getBucketValue(ram1, 'code');
+            const padding = Math.max(ram1.adjustedUsedBytes - ram1.rawUsedBytes, 0);
+            panels.push({
+                title: 'RAM1',
+                rows: [
+                    { label: 'Code (ITCM)', value: codeBytes },
+                    { label: 'Variables (DTCM)', value: variables },
+                    { label: 'Padding', value: padding },
+                    { label: 'Free for local variables', value: ram1.freeBytes },
+                ],
+            });
+        }
 
-            if (teensySizeReport.ram2) {
-                const { variables, freeForMalloc } = teensySizeReport.ram2;
-                panels.push({
-                    title: 'RAM2',
-                    rows: [
-                        { label: 'Variables', value: variables },
-                        { label: 'Free for malloc/new', value: freeForMalloc },
-                    ],
-                });
-            }
+        if (report.ram2) {
+            const ram2 = report.ram2;
+            const variables = sumBucketValues(ram2, ['data', 'bss', 'noinit']);
+            panels.push({
+                title: 'RAM2',
+                rows: [
+                    { label: 'Variables', value: variables },
+                    { label: 'Free for malloc/new', value: ram2.freeBytes },
+                ],
+            });
+        }
 
-            return panels;
-        },
-        [teensySizeReport],
-    );
-    const lastRunCompletedAt = serverStatus?.lastRunCompletedAt
-        ? new Date(serverStatus.lastRunCompletedAt)
-        : null;
-    const analysisTotals = latestAnalysis?.summaries?.totals;
+        return panels;
+    }, [latestReport]);
+
+    const teensySizeError = null;
+    const lastRunCompletedAt = serverStatus?.lastRunCompletedAt ? new Date(serverStatus.lastRunCompletedAt) : null;
+    const analysisTotals = latestSummaries?.totals ?? null;
 
     const renderAnalysisSummary = (): JSX.Element => {
         if (!analysisSummary) {
@@ -359,26 +392,58 @@ const App = (): JSX.Element => {
         }
 
         if (analysisSummary.kind === 'manual') {
-            return <p className="summary">{analysisSummary.message}</p>;
+            return (
+                <p className="summary">
+                    <span>{analysisSummary.message}</span>
+                    {analysisSummary.targetName ? (
+                        <>
+                            {' • '}
+                            <span>Target {analysisSummary.targetName}</span>
+                        </>
+                    ) : null}
+                    {analysisSummary.runtimeBytes !== undefined ? (
+                        <>
+                            {' • '}
+                            <span>
+                                Runtime <SizeValue value={analysisSummary.runtimeBytes} />
+                            </span>
+                        </>
+                    ) : null}
+                    {analysisSummary.loadImageBytes !== undefined ? (
+                        <>
+                            {' • '}
+                            <span>
+                                Load image <SizeValue value={analysisSummary.loadImageBytes} />
+                            </span>
+                        </>
+                    ) : null}
+                </p>
+            );
         }
 
         return (
             <p className="summary">
                 <span>Target: {analysisSummary.targetName}</span>
-                {analysisSummary.flashUsed !== undefined ? (
+                {analysisSummary.runtimeBytes !== undefined ? (
                     <>
                         {' • '}
                         <span>
-                            Flash <SizeValue value={analysisSummary.flashUsed} />
+                            Runtime <SizeValue value={analysisSummary.runtimeBytes} />
                         </span>
                     </>
                 ) : null}
-                {analysisSummary.ramUsed !== undefined ? (
+                {analysisSummary.loadImageBytes !== undefined ? (
                     <>
                         {' • '}
                         <span>
-                            RAM <SizeValue value={analysisSummary.ramUsed} />
+                            Load image <SizeValue value={analysisSummary.loadImageBytes} />
                         </span>
+                    </>
+                ) : null}
+                {analysisSummary.generatedAt ? (
+                    <>
+                        {' • '}
+                        <span>Generated {new Date(analysisSummary.generatedAt).toLocaleString()}</span>
                     </>
                 ) : null}
             </p>
@@ -403,55 +468,59 @@ const App = (): JSX.Element => {
                             <dt>Status</dt>
                             <dd>{statusLabel}</dd>
                         </div>
-                        {latestAnalysis && (
+                        {latestAnalysis ? (
                             <div>
                                 <dt>Target</dt>
                                 <dd>{latestAnalysis.target.name}</dd>
                             </div>
-                        )}
-                        {serverStatus?.lastRunCompletedAt && (
+                        ) : null}
+                        {serverStatus?.lastRunCompletedAt ? (
                             <div>
                                 <dt>Last analysis</dt>
                                 <dd>{new Date(serverStatus.lastRunCompletedAt).toLocaleString()}</dd>
                             </div>
-                        )}
+                        ) : null}
                         {analysisTotals ? (
                             <>
                                 <div>
-                                    <dt>Flash used</dt>
+                                    <dt>Runtime bytes</dt>
                                     <dd>
-                                        <SizeValue value={analysisTotals.flashUsed} />
+                                        <SizeValue value={analysisTotals.runtimeBytes} />
                                     </dd>
                                 </div>
                                 <div>
-                                    <dt>RAM used</dt>
+                                    <dt>Load image bytes</dt>
                                     <dd>
-                                        <SizeValue value={analysisTotals.ramUsed} />
+                                        <SizeValue value={analysisTotals.loadImageBytes} />
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>File-only bytes</dt>
+                                    <dd>
+                                        <SizeValue value={analysisTotals.fileOnlyBytes} />
                                     </dd>
                                 </div>
                             </>
                         ) : null}
-                        {health?.version && (
+                        {health?.version ? (
                             <div>
                                 <dt>Server version</dt>
                                 <dd>{health.version}</dd>
                             </div>
-                        )}
-                        {connectionError && (
-                            <div className="status-warning">{connectionError}</div>
-                        )}
+                        ) : null}
+                        {connectionError ? <div className="status-warning">{connectionError}</div> : null}
                     </dl>
 
                     <div className="status-actions">
                         <button type="button" onClick={handleManualRun} disabled={isRunDisabled}>
                             {isTriggeringRun || serverStatus?.state === 'running' ? 'Running…' : 'Run Analysis'}
                         </button>
-                        {!configReady && (
+                        {!configReady ? (
                             <span className="status-hint">Set target ID and ELF path to enable analysis.</span>
-                        )}
-                        {configReady && !(pendingConfig.autoRun ?? false) && (
+                        ) : null}
+                        {configReady && !(pendingConfig.autoRun ?? false) ? (
                             <span className="status-hint">Auto-run is off. Use this button after builds.</span>
-                        )}
+                        ) : null}
                     </div>
 
                     {(runError || serverStatus?.errorMessage) && (
@@ -531,7 +600,7 @@ const App = (): JSX.Element => {
                             <span>Automatically run analysis when files change</span>
                         </label>
 
-                        {configError && <p className="config-error">{configError}</p>}
+                        {configError ? <p className="config-error">{configError}</p> : null}
 
                         <div className="config-actions">
                             <button type="submit" disabled={isSavingConfig}>
@@ -561,10 +630,13 @@ const App = (): JSX.Element => {
 
                 <RegionUsageCard regionUsage={regionUsage} lastRunCompletedAt={lastRunCompletedAt} />
 
-                <MemoryMapCard analysis={latestAnalysis} lastRunCompletedAt={lastRunCompletedAt} />
+                <MemoryMapCard
+                    analysis={latestAnalysis}
+                    summaries={latestSummaries}
+                    lastRunCompletedAt={lastRunCompletedAt}
+                />
                 <TreemapCard />
-                <section className="placeholder-grid">
-                </section>
+                <section className="placeholder-grid" />
             </main>
         </div>
     );

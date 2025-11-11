@@ -1,7 +1,15 @@
 import express, { type Request, type Response } from 'express';
 import http from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
-import { analyzeBuild, type AnalyzeBuildParams, type Analysis } from '@teensy-mem-explorer/analyzer';
+import {
+  analyzeBuild,
+  calculateTeensySizeReport,
+  generateSummaries,
+  type AnalyzeBuildParams,
+  type Analysis,
+  type Summaries,
+  type TeensySizeReportSummary,
+} from '@teensy-mem-explorer/analyzer';
 import type { AnalysisBroadcastPayload, ServerConfig, ServerMessage, ServerStatusPayload } from '../shared/protocol';
 
 const DEFAULT_PORT = Number.parseInt(process.env.TME_VIEWER_PORT ?? '5317', 10);
@@ -20,8 +28,14 @@ let activeConfig: ServerConfig = {
     toolchainDir: "C:\\Users\\carl\\.platformio\\packages\\toolchain-gccarmnoneeabi-teensy\\bin",
     toolchainPrefix: "arm-none-eabi-",
 };
-let lastAnalysis: Analysis | null = null;
-let lastAnalysisGeneratedAt: string | null = null;
+interface CompletedAnalysis {
+  analysis: Analysis;
+  summaries: Summaries;
+  report?: TeensySizeReportSummary;
+  generatedAt: string;
+}
+
+let lastAnalysis: CompletedAnalysis | null = null;
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -48,13 +62,15 @@ const broadcastConfig = (): void => {
 };
 
 const broadcastAnalysis = (): void => {
-  if (!lastAnalysis || !lastAnalysisGeneratedAt) {
+  if (!lastAnalysis) {
     return;
   }
 
   const payload: AnalysisBroadcastPayload = {
-    analysis: lastAnalysis,
-    generatedAt: lastAnalysisGeneratedAt,
+    analysis: lastAnalysis.analysis,
+    summaries: lastAnalysis.summaries,
+    report: lastAnalysis.report,
+    generatedAt: lastAnalysis.generatedAt,
   };
   const message: ServerMessage = { type: 'analysis', payload };
   const encoded = JSON.stringify(message);
@@ -72,12 +88,17 @@ wss.on('connection', (socket) => {
   socket.send(JSON.stringify(hello));
   socket.send(JSON.stringify({ type: 'status', payload: currentStatus } satisfies ServerMessage));
   socket.send(JSON.stringify({ type: 'config', payload: activeConfig } satisfies ServerMessage));
-  if (lastAnalysis && lastAnalysisGeneratedAt) {
+  if (lastAnalysis) {
     socket.send(
       JSON.stringify(
         {
           type: 'analysis',
-          payload: { analysis: lastAnalysis, generatedAt: lastAnalysisGeneratedAt },
+          payload: {
+            analysis: lastAnalysis.analysis,
+            summaries: lastAnalysis.summaries,
+            report: lastAnalysis.report,
+            generatedAt: lastAnalysis.generatedAt,
+          },
         } satisfies ServerMessage,
       ),
     );
@@ -94,7 +115,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
     version: VERSION,
     port: DEFAULT_PORT,
     state: currentStatus,
-    latestAnalysisGeneratedAt: lastAnalysisGeneratedAt ?? undefined,
+  latestAnalysisGeneratedAt: lastAnalysis?.generatedAt ?? undefined,
   });
 });
 
@@ -141,18 +162,25 @@ app.post('/api/run', async (_req: Request, res: Response) => {
 
   try {
     const analysis = await analyzeBuild(params);
-    lastAnalysis = analysis;
-    lastAnalysisGeneratedAt = new Date().toISOString();
+    const summaries = generateSummaries(analysis);
+    const report = calculateTeensySizeReport(analysis, { summaries });
+    const generatedAt = new Date().toISOString();
+    lastAnalysis = {
+      analysis,
+      summaries,
+      report,
+      generatedAt,
+    };
 
     currentStatus = {
       state: activeConfig.autoRun ? 'watching' : 'idle',
       lastRunStartedAt: startTime,
-      lastRunCompletedAt: lastAnalysisGeneratedAt,
+      lastRunCompletedAt: generatedAt,
     };
     broadcastStatus();
     broadcastAnalysis();
 
-    res.status(200).json({ status: 'ok', generatedAt: lastAnalysisGeneratedAt });
+    res.status(200).json({ status: 'ok', generatedAt });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown analysis failure.';
     currentStatus = {

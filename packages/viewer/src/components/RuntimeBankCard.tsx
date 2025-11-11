@@ -41,7 +41,7 @@ const RuntimeBankCard = ({ usage, lastRunCompletedAt }: RuntimeBankCardProps): J
     return (
         <section className="summary-card">
             <div className="summary-header">
-                <h2>Runtime Banks</h2>
+                <h2>Hardware Banks</h2>
                 <div className="summary-meta">
                     {lastRunCompletedAt ? (
                         <span className="summary-updated">Based on {lastRunCompletedAt.toLocaleString()}</span>

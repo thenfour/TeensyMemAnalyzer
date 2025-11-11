@@ -5,6 +5,7 @@ import { SizeValue } from './SizeValue';
 import AddressValue from './AddressValue';
 import { useMemoryMapData, type MemoryMapAggregation, type MemoryMapSpan } from '../hooks/useMemoryMapData';
 import MemoryMapLegend from './MemoryMapLegend';
+import { computeMemoryMapSpanLayout } from '../utils/memoryMapLayout';
 
 interface MemoryMapCardProps {
     analysis: Analysis | null;
@@ -46,11 +47,17 @@ const MemoryMapBankVisualization = ({
 }: MemoryMapBankVisualizationProps): JSX.Element => {
     const { width, height, padding, minSpanHeight } = MEMORY_MAP_DIMENSIONS;
 
-    const usableHeight = height - padding * 2;
-    const extent = bankEnd - bankStart;
-    const scale = extent > 0 ? usableHeight / extent : 1;
-
-    const sortedSpans = useMemo(() => [...spans].sort((a, b) => a.start - b.start), [spans]);
+    const layouts = useMemo(
+        () =>
+            computeMemoryMapSpanLayout(spans, {
+                bankStart,
+                bankEnd,
+                totalHeight: height,
+                padding,
+                minSpanHeight,
+            }),
+        [spans, bankStart, bankEnd, height, padding, minSpanHeight],
+    );
 
     const trackWidth = Math.max(40, width * 0.46);
     const trackX = (width - trackWidth) / 2;
@@ -75,25 +82,14 @@ const MemoryMapBankVisualization = ({
                     stroke="#cbd5e1"
                     strokeWidth={1}
                 />
-                {sortedSpans.map((span) => {
-                    const offsetEnd = span.end - bankStart;
-                    const rawHeight = Math.max((span.size || 0) * scale, minSpanHeight);
-                    const rawY = padding + (extent > 0 ? (extent - offsetEnd) * scale : 0);
-                    const clampedY = Math.min(Math.max(rawY, padding), height - padding);
-                    const bottom = Math.min(clampedY + rawHeight, height - padding);
-                    const displayHeight = Math.max(rawHeight, minSpanHeight);
-                    let y = bottom - displayHeight;
-                    if (y < padding) {
-                        y = padding;
-                    }
-                    let effectiveHeight = displayHeight;
-                    if (y + effectiveHeight > height - padding) {
-                        effectiveHeight = height - padding - y;
+                {layouts.map(({ span, y, height: spanHeight }) => {
+                    if (spanHeight <= 0) {
+                        return null;
                     }
 
                     const isSelected = selectedSpanId === span.id;
-                    const textY = y + effectiveHeight / 2 + 4;
-                    const fontSize = Math.min(12, Math.max(10, effectiveHeight / 4 + 8));
+                    const textY = y + spanHeight / 2 + 4;
+                    const fontSize = Math.min(12, Math.max(10, spanHeight / 4 + 8));
 
                     return (
                         <g
@@ -106,7 +102,7 @@ const MemoryMapBankVisualization = ({
                                 x={spanX}
                                 y={y}
                                 width={spanWidth}
-                                height={Math.max(effectiveHeight, 0)}
+                                height={Math.max(spanHeight, 0)}
                                 rx={6}
                                 fill={span.type === 'free' ? '#e2e8f0' : span.color}
                                 stroke={isSelected ? '#2563eb' : '#0f172a33'}
@@ -134,6 +130,8 @@ const MemoryMapCard = ({ analysis, lastRunCompletedAt }: MemoryMapCardProps): JS
     const { groups, spansById } = useMemoryMapData(analysis);
     const [aggregation, setAggregation] = useState<MemoryMapAggregation>('region');
     const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+
+    console.log(analysis);
 
     const memoryMapStyle = useMemo<MemoryMapStyle>(() => ({
         '--memory-map-bank-width': `${MEMORY_MAP_DIMENSIONS.width}px`,

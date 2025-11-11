@@ -121,6 +121,57 @@ non-alloc gaps between sections.
 
 The analyzer keeps the core platform-neutral; Teensy specifics live in config files and CLI formatting logic.
 
+
+---
+
+## Comparing with `teensy_size`
+
+The example firmware under `example/firmware.elf` is the same binary referenced in the
+`teensy_size` output copied into `example/readme.txt`. Running the CLI after building
+(`node packages/cli/dist/index.js --target teensy41 --elf example/firmware.elf --map example/firmware.map  --json`)
+produces totals that line up with the toolchain report once you map the categories:
+
+- Flash totals match: `flashUsed` (475,136 B) equals `teensy_size`'s
+  `code + data + headers` (390,840 + 75,120 + 9,172). The apparent mismatch in the
+  "code" bucket is because the analyzer records FASTRUN blocks twice—runtime bytes in
+  ITCM (`ramCode`) and their copy stored in flash as `flashInitImages`, while
+  `teensy_size` folds those bytes into its `FLASH code` column.
+- RAM1 differences are representational. `teensy_size` merges the ITCM and DTCM halves of
+  the tightly-coupled memory and labels the unused 6,984 B as "padding". The analyzer keeps
+  them as separate regions: ITCM reports zero padding because the executable sections are
+  tightly packed, and the same 6,984 B simply shows up as `freeForDynamic` inside ITCM.
+  DTCM retains the 49,088 B of variables that `teensy_size` attributes to RAM1.
+- Non-ALLOC sections (debug info, object file metadata) never consume runtime memory but do
+  appear in tooling. These bytes now surface under `summaries.fileOnly` so they stay visible
+  without polluting the region totals that feed free-space estimates.
+
+If a future firmware produces a real gap inside a region (for example alignment padding between
+ALLOC sections), `paddingBytes` and `largestGapBytes` in each `RegionSummary` will become non-zero
+and the CLI will print them under "Alignment padding" for that region.
+
+### Teensy-size field parity
+
+For quick spot checks we now emit a `Teensy-size fields:` block in the human-readable CLI output.
+Those values are calculated to match the
+[`teensy_size`](https://github.com/PaulStoffregen/teensy_size) utility byte-for-byte so you can
+compare results without leaving the repo. A couple of nuances are worth calling out:
+
+- `RAM1` combines ITCM and DTCM just like the reference tool. `code` is the sum of `.text.itcm`
+  plus `.ARM.exidx`, and it is rounded up to 32 KiB blocks before computing padding and free space
+  (`512 KiB total − rounded code − (.data + .bss)` equals "free for local variables").
+- `FLASH` buckets pull directly from the linker sections: `code = .text.code + .text.itcm + .ARM.exidx`,
+  `data = .text.progmem + .data`, and `headers = .text.headers + .text.csf`. The "free for files"
+  figure starts from the configured flash capacity (region size minus truly vacant reserved sectors)
+  and subtracts that total, matching the 0x1F0000 byte budget used by `teensy_size` on Teensy 4.x.
+- `FLASH` free space excludes reserved ranges that are still empty (flexspi config, IVT, recovery
+  sector). This mirrors how `teensy_size` reports "free for files" even though those sectors are
+  unavailable to user code.
+
+These rules live in the CLI presentation layer so the analyzer core stays platform-neutral. Any
+board-specific quirks should continue to be captured via the memory-map config rather than
+hard-coded logic.
+
+
 ---
 
 ## Development Notes

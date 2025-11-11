@@ -254,7 +254,7 @@
             "match": {
                 "equals": ".ARM.exidx"
             },
-            "categoryId": "flash_code"
+            "categoryId": "fastrun"
         },
         {
             "match": {

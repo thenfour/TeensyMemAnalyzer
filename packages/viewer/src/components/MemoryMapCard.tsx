@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { Analysis } from '@teensy-mem-explorer/analyzer';
 import { SizeValue } from './SizeValue';
 import AddressValue from './AddressValue';
@@ -20,10 +21,19 @@ interface MemoryMapBankVisualizationProps {
     onSelectSpan: (spanId: string) => void;
 }
 
-const BANK_HEIGHT = 500;
-const BANK_WIDTH = 140;
-const BANK_PADDING = 18;
-const MIN_SPAN_HEIGHT = 8;
+const MEMORY_MAP_DIMENSIONS = {
+    width: 280,
+    height: 900,
+    padding: 0,
+    minSpanHeight: 12,
+};
+
+type MemoryMapStyle = CSSProperties & {
+    '--memory-map-bank-width': string;
+    '--memory-map-bank-height': string;
+    '--memory-map-bank-padding': string;
+    '--memory-map-min-span-height': string;
+};
 
 const MemoryMapBankVisualization = ({
     bankName,
@@ -34,23 +44,32 @@ const MemoryMapBankVisualization = ({
     selectedSpanId,
     onSelectSpan,
 }: MemoryMapBankVisualizationProps): JSX.Element => {
-    const usableHeight = BANK_HEIGHT - BANK_PADDING * 2;
+    const { width, height, padding, minSpanHeight } = MEMORY_MAP_DIMENSIONS;
+
+    const usableHeight = height - padding * 2;
     const extent = bankEnd - bankStart;
     const scale = extent > 0 ? usableHeight / extent : 1;
 
     const sortedSpans = useMemo(() => [...spans].sort((a, b) => a.start - b.start), [spans]);
+
+    const trackWidth = Math.max(40, width * 0.46);
+    const trackX = (width - trackWidth) / 2;
+    const trackHeight = height - padding;
+    const spanWidth = Math.max(32, trackWidth - 4);
+    const spanX = (width - spanWidth) / 2;
 
     return (
         <div className="memory-map-bank">
             <div className="memory-map-bank-header">
                 <span className="memory-map-bank-name">{bankName}</span>
             </div>
-            <svg className="memory-map-svg" viewBox={`0 0 ${BANK_WIDTH} ${BANK_HEIGHT}`} role="presentation">
+            <svg className="memory-map-svg" viewBox={`0 0 ${width} ${height}`} role="presentation">
                 <rect
-                    x={BANK_WIDTH / 2 - 32}
-                    y={BANK_PADDING / 2}
-                    width={64}
-                    height={BANK_HEIGHT - BANK_PADDING}
+                    className="memory-map-track"
+                    x={trackX}
+                    y={padding / 2}
+                    width={trackWidth}
+                    height={trackHeight}
                     rx={10}
                     fill="#f8fafc"
                     stroke="#cbd5e1"
@@ -58,18 +77,18 @@ const MemoryMapBankVisualization = ({
                 />
                 {sortedSpans.map((span) => {
                     const offsetEnd = span.end - bankStart;
-                    const rawHeight = Math.max((span.size || 0) * scale, MIN_SPAN_HEIGHT);
-                    const rawY = BANK_PADDING + (extent > 0 ? (extent - offsetEnd) * scale : 0);
-                    const clampedY = Math.min(Math.max(rawY, BANK_PADDING), BANK_HEIGHT - BANK_PADDING);
-                    const bottom = Math.min(clampedY + rawHeight, BANK_HEIGHT - BANK_PADDING);
-                    const height = Math.max(rawHeight, MIN_SPAN_HEIGHT);
-                    let y = bottom - height;
-                    if (y < BANK_PADDING) {
-                        y = BANK_PADDING;
+                    const rawHeight = Math.max((span.size || 0) * scale, minSpanHeight);
+                    const rawY = padding + (extent > 0 ? (extent - offsetEnd) * scale : 0);
+                    const clampedY = Math.min(Math.max(rawY, padding), height - padding);
+                    const bottom = Math.min(clampedY + rawHeight, height - padding);
+                    const displayHeight = Math.max(rawHeight, minSpanHeight);
+                    let y = bottom - displayHeight;
+                    if (y < padding) {
+                        y = padding;
                     }
-                    let effectiveHeight = height;
-                    if (y + effectiveHeight > BANK_HEIGHT - BANK_PADDING) {
-                        effectiveHeight = BANK_HEIGHT - BANK_PADDING - y;
+                    let effectiveHeight = displayHeight;
+                    if (y + effectiveHeight > height - padding) {
+                        effectiveHeight = height - padding - y;
                     }
 
                     const isSelected = selectedSpanId === span.id;
@@ -83,9 +102,10 @@ const MemoryMapBankVisualization = ({
                             onClick={() => onSelectSpan(span.id)}
                         >
                             <rect
-                                x={BANK_WIDTH / 2 - 30}
+                                className="memory-map-span-rect"
+                                x={spanX}
                                 y={y}
-                                width={60}
+                                width={spanWidth}
                                 height={Math.max(effectiveHeight, 0)}
                                 rx={6}
                                 fill={span.type === 'free' ? '#e2e8f0' : span.color}
@@ -94,7 +114,7 @@ const MemoryMapBankVisualization = ({
                             />
                             {effectiveHeight >= 14 ? (
                                 <text
-                                    x={BANK_WIDTH / 2}
+                                    x={width / 2}
                                     y={textY}
                                     textAnchor="middle"
                                     fontSize={fontSize}
@@ -117,6 +137,13 @@ const MemoryMapCard = ({ analysis, lastRunCompletedAt }: MemoryMapCardProps): JS
     const [aggregation, setAggregation] = useState<MemoryMapAggregation>('region');
     const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
 
+    const memoryMapStyle = useMemo<MemoryMapStyle>(() => ({
+        '--memory-map-bank-width': `${MEMORY_MAP_DIMENSIONS.width}px`,
+        '--memory-map-bank-height': `${MEMORY_MAP_DIMENSIONS.height}px`,
+        '--memory-map-bank-padding': `${MEMORY_MAP_DIMENSIONS.padding}px`,
+        '--memory-map-min-span-height': `${MEMORY_MAP_DIMENSIONS.minSpanHeight}px`,
+    }), []);
+
     const selectedSpan = selectedSpanId ? spansById.get(selectedSpanId) ?? null : null;
 
     if (groups.length === 0) {
@@ -129,7 +156,7 @@ const MemoryMapCard = ({ analysis, lastRunCompletedAt }: MemoryMapCardProps): JS
     };
 
     return (
-        <section className="summary-card memory-map-card">
+        <section className="summary-card memory-map-card" style={memoryMapStyle}>
             <div className="summary-header">
                 <h2>Memory Map</h2>
                 <div className="summary-meta">

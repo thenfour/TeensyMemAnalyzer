@@ -435,14 +435,22 @@ rect {
     rx: 0;
 }
 
+.memory-map-svg rect.memory-map-track {
+    rx: 10;
+}
+
+.memory-map-svg rect.memory-map-span {
+    rx: 6;
+}
+
 .memory-map-bank-header {
     font-weight: 600;
     color: #1e293b;
 }
 
 .memory-map-svg {
-    width: 140px;
-    height: 500px;
+    width: var(--memory-map-bank-width, 140px);
+    height: var(--memory-map-bank-height, 320px);
 }
 
 .memory-map-span {
@@ -493,10 +501,13 @@ rect {
 }
 
 .memory-map-color {
+    width: var(--memory-map-bank-width);
+    height: var(--memory-map-bank-height);
+}
+
+.memory-map-legend .memory-map-color {
     width: 14px;
     height: 14px;
-    border-radius: 3px;
-    border: 1px solid #cbd5e1;
 }
 
 .size-value {

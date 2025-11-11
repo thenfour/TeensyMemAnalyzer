@@ -503,53 +503,56 @@ rect {
     font-style: italic;
 }
 
-.memory-map-symbols-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
+.symbol-table {
+    overflow-x: auto;
 }
 
-.memory-map-symbols-list li {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.35rem;
+.symbol-table table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 280px;
+    background: #ffffff;
+}
+
+.symbol-table thead {
+    background: #f8fafc;
+    color: #334155;
+}
+
+.symbol-table th,
+.symbol-table td {
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
     font-size: 0.92rem;
 }
 
-.memory-map-symbol-name {
+.symbol-table th {
+    text-align: left;
+    font-weight: 600;
+}
+
+.symbol-table tbody tr:last-of-type th,
+.symbol-table tbody tr:last-of-type td {
+    border-bottom: none;
+}
+
+.symbol-table-name {
     font-weight: 600;
     color: #1e293b;
 }
 
-.memory-map-symbol-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-
-.memory-map-symbol-address {
-    font-size: 0.9rem;
+.symbol-table-address,
+.symbol-table-size {
     color: #475569;
 }
 
-.memory-map-symbol-size {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    color: #475569;
-}
-
-.memory-map-symbol-size-total {
+.symbol-table-size-total {
     color: #94a3b8;
     font-size: 0.85rem;
 }
 
-.memory-map-symbols-empty {
+.symbol-table-empty {
+    margin: 0;
     color: #64748b;
     font-style: italic;
 }

@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import type { Analysis, Summaries, Symbol as AnalyzerSymbol } from '@teensy-mem-explorer/analyzer';
 import { SizeValue } from './SizeValue';
 import AddressValue from './AddressValue';
+import SymbolContributionTable, { type SymbolContribution } from './SymbolContributionTable';
 import { useMemoryMapData, type MemoryMapSpan, type MemoryMapColumnData } from '../hooks/useMemoryMapData';
 import type { MemoryMapSpanLayout } from '../utils/memoryMapLayout';
 import { computeMemoryMapSpanLayout } from '../utils/memoryMapLayout';
@@ -21,14 +22,6 @@ const MEMORY_MAP_DIMENSIONS = {
 };
 
 type SymbolIndex = Map<string, AnalyzerSymbol[]>;
-
-interface SymbolContribution {
-    id: string;
-    name: string;
-    size: number;
-    coverage: number;
-    addr: number;
-}
 
 interface MemoryMapBankVisualizationProps {
     bankName: string;
@@ -432,29 +425,7 @@ const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | nul
             <div>
                 <dt>Top symbols</dt>
                 <dd>
-                    {topSymbols.length > 0 ? (
-                        <ul className="memory-map-symbols-list">
-                            {topSymbols.map((symbol) => (
-                                <li key={symbol.id}>
-                                    <div className="memory-map-symbol-header">
-                                        <span className="memory-map-symbol-name">{symbol.name}</span>
-                                        <AddressValue value={symbol.addr} className="memory-map-symbol-address" />
-                                    </div>
-                                    <span className="memory-map-symbol-size">
-                                        <SizeValue value={symbol.coverage} />
-                                        {symbol.coverage < symbol.size ? (
-                                            <span className="memory-map-symbol-size-total">
-                                                {' '}
-                                                / <SizeValue value={symbol.size} />
-                                            </span>
-                                        ) : null}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                    ) : (
-                        <span className="memory-map-symbols-empty">No symbols found in this span.</span>
-                    )}
+                    <SymbolContributionTable symbols={topSymbols} emptyMessage="No symbols found in this span." />
                 </dd>
             </div>
         </dl>

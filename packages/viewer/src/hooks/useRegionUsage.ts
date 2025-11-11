@@ -52,9 +52,11 @@ const buildWindowUsage = (
     return (summaries.byWindow ?? []).map((windowSummary) => {
         const config = windowConfigMap.get(windowSummary.windowId);
         const label = config?.name ?? windowSummary.windowId;
+        const configuredSize = config?.sizeBytes;
         const spanBytes = windowSummary.spanBytes > 0 ? windowSummary.spanBytes : windowSummary.totalBytes;
-        const free = spanBytes > windowSummary.totalBytes ? spanBytes - windowSummary.totalBytes : undefined;
-        const percent = computeUsagePercent(windowSummary.totalBytes, spanBytes > 0 ? spanBytes : undefined);
+        const totalCapacity = configuredSize ?? spanBytes ?? windowSummary.totalBytes;
+        const free = totalCapacity !== undefined ? Math.max(totalCapacity - windowSummary.totalBytes, 0) : undefined;
+        const percent = computeUsagePercent(windowSummary.totalBytes, totalCapacity);
 
         const descriptionParts: string[] = [];
         if (config?.description) {
@@ -82,21 +84,37 @@ const buildWindowUsage = (
         const rangeStart = starts.length > 0 ? Math.min(...starts) : undefined;
         const rangeEnd = ends.length > 0 ? Math.max(...ends) : undefined;
 
+        const totalRange = (() => {
+            if (config?.baseAddress !== undefined && totalCapacity !== undefined) {
+                return {
+                    start: config.baseAddress,
+                    end: config.baseAddress + totalCapacity - 1,
+                };
+            }
+            return undefined;
+        })();
+
+        const occupiedRange =
+            rangeStart !== undefined && rangeEnd !== undefined
+                ? {
+                      start: rangeStart,
+                      end: rangeEnd - 1,
+                  }
+                : undefined;
+
         return {
             id: windowSummary.windowId,
             label,
-            total: spanBytes > 0 ? spanBytes : undefined,
+            total: totalCapacity,
             used: windowSummary.totalBytes,
             free,
             percent,
             description: descriptionParts.join(' • '),
             addressRange:
-                rangeStart !== undefined && rangeEnd !== undefined
+                totalRange || occupiedRange
                     ? {
-                          total: {
-                              start: rangeStart,
-                              end: rangeEnd - 1,
-                          },
+                          total: totalRange ?? occupiedRange!,
+                          occupied: occupiedRange,
                           regionId: windowSummary.windowId,
                           regionName: config?.name,
                           regionKind: 'window',

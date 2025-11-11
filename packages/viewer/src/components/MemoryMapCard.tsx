@@ -3,8 +3,7 @@ import type { CSSProperties } from 'react';
 import type { Analysis, Summaries } from '@teensy-mem-explorer/analyzer';
 import { SizeValue } from './SizeValue';
 import AddressValue from './AddressValue';
-import { useMemoryMapData, type MemoryMapAggregation, type MemoryMapSpan } from '../hooks/useMemoryMapData';
-import MemoryMapLegend from './MemoryMapLegend';
+import { useMemoryMapData, type MemoryMapSpan } from '../hooks/useMemoryMapData';
 import { computeMemoryMapSpanLayout } from '../utils/memoryMapLayout';
 
 interface MemoryMapCardProps {
@@ -18,7 +17,6 @@ interface MemoryMapBankVisualizationProps {
     spans: MemoryMapSpan[];
     bankStart: number;
     bankEnd: number;
-    aggregation: MemoryMapAggregation;
     selectedSpanId: string | null;
     onSelectSpan: (spanId: string) => void;
 }
@@ -42,7 +40,6 @@ const MemoryMapBankVisualization = ({
     spans,
     bankStart,
     bankEnd,
-    aggregation,
     selectedSpanId,
     onSelectSpan,
 }: MemoryMapBankVisualizationProps): JSX.Element => {
@@ -94,7 +91,7 @@ const MemoryMapBankVisualization = ({
 
                     return (
                         <g
-                            key={`${span.id}:${aggregation}`}
+                            key={span.id}
                             className="memory-map-span"
                             onClick={() => onSelectSpan(span.id)}
                         >
@@ -105,7 +102,7 @@ const MemoryMapBankVisualization = ({
                                 width={spanWidth}
                                 height={Math.max(spanHeight, 0)}
                                 rx={6}
-                                fill={span.type === 'free' ? '#e2e8f0' : span.color}
+                                fill={span.color}
                                 stroke={isSelected ? '#2563eb' : '#0f172a33'}
                                 strokeWidth={isSelected ? 2 : 1}
                             />
@@ -129,7 +126,7 @@ const MemoryMapBankVisualization = ({
 
 const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCardProps): JSX.Element | null => {
     const { groups, spansById } = useMemoryMapData(analysis, summaries);
-    const [aggregation, setAggregation] = useState<MemoryMapAggregation>('region');
+    console.log(groups);
     const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
 
     const memoryMapStyle = useMemo<MemoryMapStyle>(() => ({
@@ -145,32 +142,11 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
         return null;
     }
 
-    const handleToggle = (mode: MemoryMapAggregation): void => {
-        setAggregation(mode);
-        setSelectedSpanId(null);
-    };
-
     return (
         <section className="summary-card memory-map-card" style={memoryMapStyle}>
             <div className="summary-header">
                 <h2>Memory Map</h2>
                 <div className="summary-meta">
-                    <div className="memory-map-toggle" role="group" aria-label="Aggregation mode">
-                        <button
-                            type="button"
-                            className={aggregation === 'region' ? 'active' : ''}
-                            onClick={() => handleToggle('region')}
-                        >
-                            Region view
-                        </button>
-                        <button
-                            type="button"
-                            className={aggregation === 'category' ? 'active' : ''}
-                            onClick={() => handleToggle('category')}
-                        >
-                            Category view
-                        </button>
-                    </div>
                     {lastRunCompletedAt ? (
                         <span className="summary-updated">Based on {lastRunCompletedAt.toLocaleString()}</span>
                     ) : (
@@ -180,7 +156,6 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
             </div>
             <div className="memory-map-content">
                 <div className="memory-map-groups">
-                    <MemoryMapLegend />
                     {groups.map((group) => (
                         <div key={group.id} className="memory-map-group">
                             <div className="memory-map-group-header">
@@ -189,12 +164,11 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
                             <div className="memory-map-banks">
                                 {group.banks.map((bank) => (
                                     <MemoryMapBankVisualization
-                                        key={`${bank.id}:${aggregation}`}
+                                        key={bank.id}
                                         bankName={bank.name}
-                                        spans={bank.spans[aggregation]}
+                                        spans={bank.spans}
                                         bankStart={bank.start}
                                         bankEnd={bank.end}
-                                        aggregation={aggregation}
                                         selectedSpanId={selectedSpanId}
                                         onSelectSpan={setSelectedSpanId}
                                     />

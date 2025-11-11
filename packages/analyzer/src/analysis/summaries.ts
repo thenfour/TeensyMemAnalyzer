@@ -182,12 +182,31 @@ const buildHardwareBankSummaries = (
 
     const roundingDetails: HardwareBankRoundingDetail[] = [];
     let adjustedUsedBytes = rawUsedBytes;
+    const windowRoundingAdjustments = new Map<string, number>();
+    const blockToWindow = new Map(analysis.config.logicalBlocks.map((block) => [block.id, block.windowId] as const));
 
     (bank.roundingRules ?? []).forEach((rule) => {
       const rawBytes = rule.logicalBlockIds.reduce((total, blockId) => total + (blockBreakdownMap.get(blockId) ?? 0), 0);
       const adjustedBytes = applyRounding(rawBytes, rule.granuleBytes, rule.mode);
       const deltaBytes = adjustedBytes - rawBytes;
       adjustedUsedBytes += deltaBytes;
+
+      if (deltaBytes !== 0) {
+        const targetWindows = new Set<string>();
+        rule.logicalBlockIds.forEach((blockId) => {
+          const windowId = blockToWindow.get(blockId);
+          if (windowId) {
+            targetWindows.add(windowId);
+          }
+        });
+
+        if (targetWindows.size > 0) {
+          const share = deltaBytes / targetWindows.size;
+          targetWindows.forEach((windowId) => {
+            windowRoundingAdjustments.set(windowId, (windowRoundingAdjustments.get(windowId) ?? 0) + share);
+          });
+        }
+      }
 
       roundingDetails.push({
         logicalBlockIds: [...rule.logicalBlockIds],
@@ -209,6 +228,71 @@ const buildHardwareBankSummaries = (
       ([blockId, bytes]) => ({ blockId, bytes }),
     );
 
+    const windowUsage = new Map<string, number>();
+    windowBreakdown.forEach(({ windowId, bytes }) => {
+      windowUsage.set(windowId, bytes);
+    });
+    windowRoundingAdjustments.forEach((delta, windowId) => {
+      windowUsage.set(windowId, (windowUsage.get(windowId) ?? 0) + delta);
+    });
+
+    const blocksByWindow = new Map<string, string[]>();
+    analysis.config.logicalBlocks.forEach((block) => {
+      const existing = blocksByWindow.get(block.windowId);
+      if (existing) {
+        existing.push(block.id);
+      } else {
+        blocksByWindow.set(block.windowId, [block.id]);
+      }
+    });
+
+    const layoutSpans = [] as HardwareBankSummary['layout']['spans'];
+    let cursor = 0;
+    let occupiedTotal = 0;
+
+    bank.windowIds.forEach((windowId) => {
+      const bytes = windowUsage.get(windowId) ?? 0;
+      if (bytes <= 0) {
+        return;
+      }
+
+      const windowMeta = analysis.config.addressWindows.find((window) => window.id === windowId);
+      const label = windowMeta?.name ?? windowId;
+      const startOffset = cursor;
+      const endOffset = cursor + bytes;
+
+      layoutSpans.push({
+        id: `${bank.id}:${windowId}`,
+        label,
+        kind: 'occupied',
+        sizeBytes: bytes,
+        startOffset,
+        endOffset,
+        windowId,
+        blockIds: blocksByWindow.get(windowId),
+      });
+
+      cursor = endOffset;
+      occupiedTotal += bytes;
+    });
+
+    const layoutFreeBytes = Math.max(bank.capacityBytes - occupiedTotal, 0);
+    if (layoutFreeBytes > 0) {
+      layoutSpans.push({
+        id: `${bank.id}:free`,
+        label: 'Free',
+        kind: 'free',
+        sizeBytes: layoutFreeBytes,
+        startOffset: cursor,
+        endOffset: cursor + layoutFreeBytes,
+      });
+    }
+
+    const layout = {
+      totalBytes: bank.capacityBytes,
+      spans: layoutSpans,
+    } satisfies HardwareBankSummary['layout'];
+
     return {
       hardwareBankId: bank.id,
       name: bank.name,
@@ -220,6 +304,7 @@ const buildHardwareBankSummaries = (
       rounding: roundingDetails,
       windowBreakdown,
       blockBreakdown,
+      layout,
     };
   });
 

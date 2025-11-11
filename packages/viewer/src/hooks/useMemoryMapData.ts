@@ -15,9 +15,9 @@ export interface MemoryMapSpan {
     size: number;
     regionId?: string;
     regionName?: string;
-    category?: string;
-    categoryLabel?: string;
     color: string;
+    blockIds?: string[];
+    blockNames?: string[];
 }
 
 export interface MemoryMapBank {
@@ -35,131 +35,7 @@ export interface MemoryMapGroup {
     banks: MemoryMapBank[];
 }
 
-const GAP_COLOR = 'hsl(215 30% 88%)';
-const FREE_COLOR = 'hsl(142 35% 78%)';
-
-const buildSpansForWindow = (
-    groupId: string,
-    windowId: string,
-    windowLabel: string,
-    windowSummary: Summaries['byWindow'][number] | undefined,
-    blockNameById: Map<string, string>,
-    freeBytes: number,
-): MemoryMapBank => {
-    const placements = windowSummary?.placements ?? [];
-
-    if (placements.length === 0) {
-        const spans: MemoryMapSpan[] = [];
-        if (freeBytes > 0) {
-            spans.push({
-                id: `${windowId}:free`,
-                bankId: windowId,
-                groupId,
-                type: 'free',
-                label: 'Free',
-                start: 0,
-                end: freeBytes,
-                size: freeBytes,
-                regionId: windowId,
-                regionName: windowLabel,
-                color: FREE_COLOR,
-            });
-        }
-
-        const end = spans.length > 0 ? spans[0].end : 0;
-        return {
-            id: windowId,
-            name: windowLabel,
-            start: spans.length > 0 ? spans[0].start : 0,
-            end,
-            size: end,
-            spans,
-        } satisfies MemoryMapBank;
-    }
-
-    const sortedPlacements = placements
-        .slice()
-        .sort((a, b) => a.start - b.start || a.size - b.size);
-
-    const spans: MemoryMapSpan[] = [];
-    let cursor = sortedPlacements[0].start;
-    const bankStart = cursor;
-    let bankEnd = cursor;
-
-    sortedPlacements.forEach((placement, index) => {
-        if (placement.start > cursor) {
-            const gapSpan: MemoryMapSpan = {
-                id: `${windowId}:gap:${index}`,
-                bankId: windowId,
-                groupId,
-                type: 'free',
-                label: 'Gap',
-                start: cursor,
-                end: placement.start,
-                size: placement.start - cursor,
-                regionId: windowId,
-                regionName: windowLabel,
-                color: GAP_COLOR,
-            } satisfies MemoryMapSpan;
-            spans.push(gapSpan);
-            cursor = placement.start;
-        }
-
-        const placementEnd = placement.start + placement.size;
-        const blockId = placement.blockId ?? placement.sectionId ?? `block-${index}`;
-        const blockLabel =
-            blockNameById.get(placement.blockId ?? '') ?? placement.blockId ?? placement.sectionId ?? `Section ${index + 1}`;
-        const regionSpan: MemoryMapSpan = {
-            id: `${windowId}:placement:${index}`,
-            bankId: windowId,
-            groupId,
-            type: 'occupied',
-            label: blockLabel,
-            start: placement.start,
-            end: placementEnd,
-            size: placement.size,
-            regionId: windowId,
-            regionName: windowLabel,
-            category: placement.blockId,
-            categoryLabel: placement.blockId ? blockLabel : undefined,
-            color: hashColor(`block:${blockId}`),
-        } satisfies MemoryMapSpan;
-        spans.push(regionSpan);
-
-        cursor = Math.max(cursor, placementEnd);
-        bankEnd = Math.max(bankEnd, placementEnd);
-    });
-
-    if (freeBytes > 0) {
-        const freeSpan: MemoryMapSpan = {
-            id: `${windowId}:free`,
-            bankId: windowId,
-            groupId,
-            type: 'free',
-            label: 'Free',
-            start: bankEnd,
-            end: bankEnd + freeBytes,
-            size: freeBytes,
-            regionId: windowId,
-            regionName: windowLabel,
-            color: FREE_COLOR,
-        } satisfies MemoryMapSpan;
-        spans.push(freeSpan);
-        bankEnd = freeSpan.end;
-    }
-
-    const sortedSpans = spans.sort((a, b) => a.start - b.start);
-    const start = sortedSpans.length > 0 ? sortedSpans[0].start : bankStart;
-
-    return {
-        id: windowId,
-        name: windowLabel,
-        start,
-        end: bankEnd,
-        size: Math.max(bankEnd - start, 0),
-        spans: sortedSpans,
-    } satisfies MemoryMapBank;
-};
+const FREE_COLOR = 'hsl(215 30% 88%)';
 
 export const useMemoryMapData = (
     analysis: Analysis | null,
@@ -169,49 +45,65 @@ export const useMemoryMapData = (
     spansById: Map<string, MemoryMapSpan>;
 } =>
     useMemo(() => {
-        if (!analysis || !summaries) {
+        if (!summaries) {
             return { groups: [], spansById: new Map() };
         }
 
         const windowLabelById = new Map(
-            analysis.config.addressWindows.map((window) => [window.id, window.name ?? window.id] as const),
+            analysis?.config.addressWindows.map((window) => [window.id, window.name ?? window.id] as const) ?? [],
         );
         const blockNameById = new Map(
-            analysis.config.logicalBlocks.map((block) => [block.id, block.name ?? block.id] as const),
-        );
-        const windowSummaryById = new Map(summaries.byWindow.map((entry) => [entry.windowId, entry] as const));
-        const hardwareBankSummaryById = new Map(
-            summaries.hardwareBanks.map((entry) => [entry.hardwareBankId, entry] as const),
+            analysis?.config.logicalBlocks.map((block) => [block.id, block.name ?? block.id] as const) ?? [],
         );
 
         const spansById = new Map<string, MemoryMapSpan>();
-        const groups: MemoryMapGroup[] = [];
+        const groups: MemoryMapGroup[] = summaries.hardwareBanks.map((bankSummary) => {
+            const bankId = bankSummary.hardwareBankId;
+            const bankLabel = bankSummary.name ?? bankId;
 
-        analysis.config.hardwareBanks.forEach((hardwareBank) => {
-            const bankSummary = hardwareBankSummaryById.get(hardwareBank.id);
-            const banks: MemoryMapBank[] = hardwareBank.windowIds.map((windowId, index, windowIds) => {
-                const windowSummary = windowSummaryById.get(windowId);
-                const windowLabel = windowLabelById.get(windowId) ?? windowId;
-                const isLastWindow = index === windowIds.length - 1;
-                const freeBytes = bankSummary && isLastWindow ? bankSummary.freeBytes : 0;
-                const bank = buildSpansForWindow(
-                    hardwareBank.id,
-                    windowId,
-                    windowLabel,
-                    windowSummary,
-                    blockNameById,
-                    freeBytes,
-                );
+            const spans: MemoryMapSpan[] = bankSummary.layout.spans.map((span) => {
+                const isFree = span.kind === 'free';
+                const color = isFree
+                    ? FREE_COLOR
+                    : hashColor(`bank:${bankId}:${span.windowId ?? span.id}`);
 
-                bank.spans.forEach((span) => spansById.set(span.id, span));
-                return bank;
+                const regionName = span.windowId ? windowLabelById.get(span.windowId) : undefined;
+                const blockIds = span.blockIds ?? [];
+                const blockNames = blockIds.map((blockId) => blockNameById.get(blockId) ?? blockId);
+                const memorySpan: MemoryMapSpan = {
+                    id: `${bankId}:${span.id}`,
+                    bankId,
+                    groupId: bankId,
+                    type: isFree ? 'free' : 'occupied',
+                    label: span.label,
+                    start: span.startOffset,
+                    end: span.endOffset,
+                    size: span.sizeBytes,
+                    regionId: span.windowId,
+                    regionName,
+                    color,
+                    blockIds: blockIds.length > 0 ? blockIds : undefined,
+                    blockNames: blockNames.length > 0 ? blockNames : undefined,
+                } satisfies MemoryMapSpan;
+
+                spansById.set(memorySpan.id, memorySpan);
+                return memorySpan;
             });
 
-            groups.push({
-                id: hardwareBank.id,
-                name: hardwareBank.name ?? hardwareBank.id,
-                banks,
-            });
+            const bank: MemoryMapBank = {
+                id: bankId,
+                name: bankLabel,
+                start: 0,
+                end: bankSummary.layout.totalBytes,
+                size: bankSummary.layout.totalBytes,
+                spans,
+            } satisfies MemoryMapBank;
+
+            return {
+                id: bankId,
+                name: bankLabel,
+                banks: [bank],
+            } satisfies MemoryMapGroup;
         });
 
         return { groups, spansById };

@@ -191,10 +191,10 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
                                     <dd>{selectedSpan.regionName}</dd>
                                 </div>
                             ) : null}
-                            {selectedSpan.category ? (
+                            {selectedSpan.blockNames ? (
                                 <div>
-                                    <dt>Category</dt>
-                                    <dd>{selectedSpan.categoryLabel ?? selectedSpan.category}</dd>
+                                    <dt>Blocks</dt>
+                                    <dd>{selectedSpan.blockNames.join(', ')}</dd>
                                 </div>
                             ) : null}
                             <div>

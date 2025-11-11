@@ -231,6 +231,24 @@ export interface HardwareBankBlockBreakdown {
   bytes: number;
 }
 
+export type HardwareBankSpanKind = 'occupied' | 'free';
+
+export interface HardwareBankLayoutSpan {
+  id: string;
+  label: string;
+  kind: HardwareBankSpanKind;
+  sizeBytes: number;
+  startOffset: number;
+  endOffset: number;
+  windowId?: string;
+  blockIds?: string[];
+}
+
+export interface HardwareBankLayout {
+  totalBytes: number;
+  spans: HardwareBankLayoutSpan[];
+}
+
 export interface HardwareBankSummary {
   hardwareBankId: string;
   name: string;
@@ -242,6 +260,7 @@ export interface HardwareBankSummary {
   rounding: HardwareBankRoundingDetail[];
   windowBreakdown: HardwareBankWindowBreakdown[];
   blockBreakdown: HardwareBankBlockBreakdown[];
+  layout: HardwareBankLayout;
 }
 
 export interface TagUsageSummary {

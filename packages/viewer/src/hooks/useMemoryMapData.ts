@@ -9,6 +9,7 @@ import type {
     SectionCategory,
 } from '@teensy-mem-explorer/analyzer';
 import { hashColor } from '../utils/color';
+import { MEMORY_CATEGORY_LABEL_BY_KEY, type MemoryCategoryKey } from '../constants/memoryCategories';
 
 export type MemoryMapAggregation = 'region' | 'category';
 
@@ -59,6 +60,7 @@ interface OccupiedSlice {
     end: number;
     label: string;
     category?: SectionCategory;
+    categoryKey?: MemoryCategoryKey;
     regionId: string;
     regionName?: string;
     mergedPaddingBytes: number;
@@ -66,24 +68,19 @@ interface OccupiedSlice {
 
 const GAP_MERGE_THRESHOLD = 256; // bytes
 
+const CATEGORY_KEY_BY_SECTION: Record<SectionCategory, MemoryCategoryKey> = {
+    code: 'Code',
+    code_fast: 'Fast Code',
+    rodata: 'Const Data',
+    data_init: 'Init Data',
+    bss: 'BSS',
+    dma: 'DMA',
+    other: 'Other',
+};
+
 const humanizeCategory = (category: SectionCategory): string => {
-    switch (category) {
-        case 'code':
-            return 'Code';
-        case 'code_fast':
-            return 'Fast Code';
-        case 'rodata':
-            return 'Const Data';
-        case 'data_init':
-            return 'Init Data';
-        case 'bss':
-            return 'BSS';
-        case 'dma':
-            return 'DMA';
-        case 'other':
-        default:
-            return 'Other';
-    }
+    const key = CATEGORY_KEY_BY_SECTION[category] ?? 'Other';
+    return MEMORY_CATEGORY_LABEL_BY_KEY[key] ?? key;
 };
 
 const clampSpan = (start: number, end: number, region: Region): { start: number; end: number } => {
@@ -113,7 +110,8 @@ const buildCategorySlices = (region: Region, sections: Section[]): OccupiedSlice
         const start = section.vmaStart ?? region.start;
         const end = start + section.size;
         const category = section.category;
-        const label = humanizeCategory(category);
+        const categoryKey = CATEGORY_KEY_BY_SECTION[category] ?? 'Other';
+        const label = MEMORY_CATEGORY_LABEL_BY_KEY[categoryKey] ?? categoryKey;
 
         if (!current) {
             current = {
@@ -122,6 +120,7 @@ const buildCategorySlices = (region: Region, sections: Section[]): OccupiedSlice
                 end,
                 label,
                 category,
+                categoryKey,
                 regionId: region.id,
                 regionName: region.name,
                 mergedPaddingBytes: 0,
@@ -147,6 +146,7 @@ const buildCategorySlices = (region: Region, sections: Section[]): OccupiedSlice
             end,
             label,
             category,
+            categoryKey,
             regionId: region.id,
             regionName: region.name,
             mergedPaddingBytes: 0,
@@ -211,9 +211,12 @@ const buildRegionSlice = (
         }
 
         const sliceEnd = Math.min(slice.end, regionEnd);
-    const sliceType = reservedIds.has(slice.id) ? 'reserved' : 'occupied';
-    const label = slice.label;
-    const colorKey = sliceType === 'reserved' ? `reserved:${slice.label}` : `occupied:${slice.label}`;
+        const sliceType = reservedIds.has(slice.id) ? 'reserved' : 'occupied';
+        const label = slice.label;
+        const colorKey =
+            sliceType === 'reserved'
+                ? `reserved:${slice.label}`
+                : `occupied:${slice.categoryKey ?? slice.label}`;
 
         spans.push({
             id: `${bankId}:${slice.id}:${aggregation}`,

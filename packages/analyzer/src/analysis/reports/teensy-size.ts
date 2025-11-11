@@ -1,10 +1,17 @@
 import {
   Analysis,
   LogicalBlock,
+  Summaries,
   TeensySizeReportEntryConfig,
   TeensySizeReportEntrySummary,
   TeensySizeReportSummary,
 } from '../../model';
+import { generateSummaries } from '../summaries';
+
+export interface CalculateTeensySizeReportOptions {
+  reportConfig?: Record<string, TeensySizeReportEntryConfig>;
+  summaries?: Summaries;
+}
 
 interface BlockUsage {
   total: number;
@@ -81,9 +88,9 @@ const sumBlockUsage = (
 const sumBucket = (tags: string[], totals: Map<string, number>): number =>
   tags.reduce((total, tag) => total + (totals.get(tag) ?? 0), 0);
 
-const extractTagTotals = (analysis: Analysis): Map<string, number> => {
+const extractTagTotals = (summaries: Summaries): Map<string, number> => {
   const totals = new Map<string, number>();
-  analysis.summaries.tagTotals.forEach((entry) => totals.set(entry.tag, entry.bytes));
+  summaries.tagTotals.forEach((entry) => totals.set(entry.tag, entry.bytes));
   return totals;
 };
 
@@ -91,6 +98,7 @@ const buildEntrySummary = (
   key: string,
   config: TeensySizeReportEntryConfig,
   analysis: Analysis,
+  summaries: Summaries,
   blockUsage: Map<string, BlockUsage>,
   tagTotals: Map<string, number>,
 ): TeensySizeReportEntrySummary => {
@@ -99,7 +107,7 @@ const buildEntrySummary = (
     throw new Error(`Report ${key} references unknown hardware bank ${config.hardwareBankId}.`);
   }
 
-  const bankSummary = analysis.summaries.hardwareBanks.find((summary) => summary.hardwareBankId === bankConfig.id);
+  const bankSummary = summaries.hardwareBanks.find((summary) => summary.hardwareBankId === bankConfig.id);
   if (!bankSummary) {
     throw new Error(`No computed summary found for hardware bank ${bankConfig.id}.`);
   }
@@ -133,18 +141,22 @@ const buildEntrySummary = (
   };
 };
 
-export const calculateTeensySizeReport = (analysis: Analysis): TeensySizeReportSummary => {
-  const config = analysis.reporting?.teensySize;
+export const calculateTeensySizeReport = (
+  analysis: Analysis,
+  options: CalculateTeensySizeReportOptions = {},
+): TeensySizeReportSummary => {
+  const summaries = options.summaries ?? generateSummaries(analysis);
+  const config = options.reportConfig ?? analysis.config.reports?.teensySize;
   if (!config) {
     return {};
   }
 
   const blockUsage = buildBlockUsageIndex(analysis);
-  const tagTotals = extractTagTotals(analysis);
+  const tagTotals = extractTagTotals(summaries);
 
   const result: TeensySizeReportSummary = {};
   Object.entries(config).forEach(([key, entry]) => {
-    result[key] = buildEntrySummary(key, entry, analysis, blockUsage, tagTotals);
+    result[key] = buildEntrySummary(key, entry, analysis, summaries, blockUsage, tagTotals);
   });
 
   return result;

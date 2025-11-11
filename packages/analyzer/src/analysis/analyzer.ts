@@ -7,7 +7,6 @@ import { parseReadelfSections } from '../parsers/readelf';
 import { parseObjdumpSectionHeaders } from '../parsers/objdump';
 import { parseNmOutput } from '../parsers/nm';
 import { assignSymbolsToSections } from './symbol-assignment';
-import { calculateSummaries } from './summaries';
 import { applySectionCategories } from './section-classification';
 import { assignBlocksToSections } from './block-assignment';
 
@@ -93,10 +92,6 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
       console.warn(warning);
     });
   }
-
-  analysis.summaries = calculateSummaries(analysis.sections, memoryMap);
-
-  analysis.reporting = memoryMap.reports ?? {};
 
   return analysis;
 };

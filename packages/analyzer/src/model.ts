@@ -276,8 +276,6 @@ export interface Analysis {
   config: MemoryMapConfig;
   sections: Section[];
   symbols: Symbol[];
-  summaries: Summaries;
-  reporting: ReportsConfig;
 }
 
 export const createEmptyAnalysis = (): Analysis => ({
@@ -300,22 +298,6 @@ export const createEmptyAnalysis = (): Analysis => ({
   },
   sections: [],
   symbols: [],
-  summaries: {
-    totals: {
-      runtimeBytes: 0,
-      loadImageBytes: 0,
-      fileOnlyBytes: 0,
-    },
-    byCategory: [],
-    byWindow: [],
-    hardwareBanks: [],
-    fileOnly: {
-      totalBytes: 0,
-      sections: [],
-    },
-    tagTotals: [],
-  },
-  reporting: {},
 });
 
 export interface AnalyzeBuildParams {

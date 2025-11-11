@@ -1,12 +1,4 @@
-import {
-  AddressUsageKind,
-  HardwareBankSummary,
-  MemoryMapConfig,
-  Section,
-  Summaries,
-  TagUsageSummary,
-  WindowSummary,
-} from '../model';
+import { AddressUsageKind, Analysis, HardwareBankSummary, Summaries, TagUsageSummary, WindowSummary } from '../model';
 
 import {
   HardwareBankWindowBreakdown,
@@ -122,10 +114,10 @@ const computeWindowSpan = (placements: WindowSectionPlacement[]): { span: number
 };
 
 const buildWindowSummaries = (
-  config: MemoryMapConfig,
+  analysis: Analysis,
   windowAccumulators: Map<string, WindowAccumulator>,
 ): WindowSummary[] =>
-  config.addressWindows.map((window) => {
+  analysis.config.addressWindows.map((window) => {
     const accumulator = windowAccumulators.get(window.id);
     if (!accumulator) {
       return {
@@ -173,10 +165,10 @@ const buildWindowSummaries = (
   });
 
 const buildHardwareBankSummaries = (
-  config: MemoryMapConfig,
+  analysis: Analysis,
   assignmentRecords: AssignmentRecord[],
 ): HardwareBankSummary[] =>
-  config.hardwareBanks.map((bank) => {
+  analysis.config.hardwareBanks.map((bank) => {
     const windowSet = new Set(bank.windowIds);
     const relevantAssignments = assignmentRecords.filter((record) => windowSet.has(record.windowId));
 
@@ -231,7 +223,8 @@ const buildHardwareBankSummaries = (
     };
   });
 
-export const calculateSummaries = (sections: Section[], config: MemoryMapConfig): Summaries => {
+export const generateSummaries = (analysis: Analysis): Summaries => {
+  const { sections, config } = analysis;
   let runtimeBytes = 0;
   let loadImageBytes = 0;
   let fileOnlyBytes = 0;
@@ -300,8 +293,8 @@ export const calculateSummaries = (sections: Section[], config: MemoryMapConfig)
     loadImageBytes: categoryLoadTotals.get(category.id) ?? 0,
   }));
 
-  const byWindow = buildWindowSummaries(config, windowAccumulators);
-  const hardwareBanks = buildHardwareBankSummaries(config, assignmentRecords);
+  const byWindow = buildWindowSummaries(analysis, windowAccumulators);
+  const hardwareBanks = buildHardwareBankSummaries(analysis, assignmentRecords);
 
   const tagTotalsSummary: TagUsageSummary[] = Array.from(tagTotals.entries()).map(([tag, bytes]) => ({
     tag,

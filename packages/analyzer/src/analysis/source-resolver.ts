@@ -60,7 +60,7 @@ export const resolveSymbolSource = async (
 
   const toolchain = await resolveToolchain({
     elfPath: analysis.build.elfPath,
-    targetId: params.analysis.target.name ?? 'unknown',
+    targetId: params.analysis.config.targetId ?? 'unknown',
     toolchainDir,
     toolchainPrefix,
   });

@@ -1,4 +1,4 @@
-import { Section, SectionFlags, SectionCategory } from '../model';
+import { Section, SectionFlags } from '../model';
 
 interface ReadelfSectionRow {
   index: number;
@@ -16,25 +16,6 @@ const parseFlags = (raw: string): SectionFlags => ({
   write: raw.includes('W'),
   tls: raw.includes('T') || undefined,
 });
-
-const classifySection = (name: string, flags: SectionFlags): SectionCategory => {
-  if (name.startsWith('.text')) {
-    return flags.exec ? 'code_fast' : 'code';
-  }
-  if (name.startsWith('.rodata') || name === '.ARM.exidx') {
-    return 'rodata';
-  }
-  if (name.startsWith('.data')) {
-    return 'data_init';
-  }
-  if (name.startsWith('.bss')) {
-    return 'bss';
-  }
-  if (name.includes('dma')) {
-    return 'dma';
-  }
-  return 'other';
-};
 
 const parseLine = (line: string): ReadelfSectionRow | null => {
   if (!line.startsWith('[')) {
@@ -106,11 +87,12 @@ export const parseReadelfSections = (stdout: string): Section[] => {
       name: parsed.name,
       vmaStart: parsed.addr,
       size: parsed.size,
-      category: classifySection(parsed.name, flags),
       flags,
       lmaStart: undefined,
-      loadRegionId: undefined,
-      execRegionId: undefined,
+      categoryId: undefined,
+      blockAssignments: [],
+      primaryBlockId: undefined,
+      primaryWindowId: undefined,
     });
   });
 

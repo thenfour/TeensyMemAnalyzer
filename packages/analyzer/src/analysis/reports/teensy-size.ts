@@ -1,232 +1,136 @@
 import {
   Analysis,
-  Region,
-  RegionSummary,
-  RuntimeBankSummary,
-  RuntimeGroupSummary,
-  Section,
-  SectionCategory,
-  TeensySizeReportConfig,
+  LogicalBlock,
+  TeensySizeReportEntryConfig,
+  TeensySizeReportEntrySummary,
   TeensySizeReportSummary,
 } from '../../model';
 
-const sumRegionCategories = (
-  summary: RegionSummary | undefined,
-  categories: SectionCategory[],
+interface BlockUsage {
+  total: number;
+  runtime: number;
+  load: number;
+  tags: Map<string, number>;
+}
+
+const buildBlockUsageIndex = (analysis: Analysis): Map<string, BlockUsage> => {
+  const index = new Map<string, BlockUsage>();
+
+  analysis.sections.forEach((section) => {
+    section.blockAssignments.forEach((assignment) => {
+      const current = index.get(assignment.blockId) ?? {
+        total: 0,
+        runtime: 0,
+        load: 0,
+        tags: new Map<string, number>(),
+      };
+
+      current.total += assignment.size;
+      if (assignment.addressType === 'load') {
+        current.load += assignment.size;
+      } else {
+        current.runtime += assignment.size;
+      }
+
+      assignment.reportTags.forEach((tag) => {
+        current.tags.set(tag, (current.tags.get(tag) ?? 0) + assignment.size);
+      });
+
+      index.set(assignment.blockId, current);
+    });
+  });
+
+  return index;
+};
+
+const getLogicalBlock = (blocks: LogicalBlock[], blockId: string): LogicalBlock => {
+  const found = blocks.find((block) => block.id === blockId);
+  if (!found) {
+    throw new Error(`Unknown logical block referenced in report: ${blockId}`);
+  }
+  return found;
+};
+
+const sumBlockUsage = (
+  blockIds: string[] | undefined,
+  index: Map<string, BlockUsage>,
+  mode: 'runtime' | 'load' | 'total',
 ): number => {
-  if (!summary) {
+  if (!blockIds || blockIds.length === 0) {
     return 0;
   }
 
-  return categories.reduce((total, category) => total + (summary.usedByCategory[category] ?? 0), 0);
-};
-
-const createSectionSizeMap = (sections: Section[]): Map<string, number> => {
-  const map = new Map<string, number>();
-  sections.forEach((section) => {
-    const previous = map.get(section.name) ?? 0;
-    map.set(section.name, previous + section.size);
-  });
-  return map;
-};
-
-const sumSectionNames = (sectionSizes: Map<string, number>, names: string[]): number =>
-  names.reduce((total, name) => total + (sectionSizes.get(name) ?? 0), 0);
-
-const sumSections = (sections: Section[], predicate: (section: Section) => boolean): number =>
-  sections.reduce((total, section) => (predicate(section) ? total + section.size : total), 0);
-
-const dedupeBanks = (banks: RuntimeBankSummary[]): RuntimeBankSummary[] => {
-  const seen = new Map<string, RuntimeBankSummary>();
-  banks.forEach((bank) => {
-    if (!seen.has(bank.bankId)) {
-      seen.set(bank.bankId, bank);
+  return blockIds.reduce((total, blockId) => {
+    const usage = index.get(blockId);
+    if (!usage) {
+      throw new Error(`Report references block ${blockId} which has no recorded usage.`);
     }
-  });
-  return Array.from(seen.values());
+
+    switch (mode) {
+      case 'runtime':
+        return total + usage.runtime;
+      case 'load':
+        return total + usage.load;
+      case 'total':
+      default:
+        return total + usage.total;
+    }
+  }, 0);
 };
 
-const collectBanksFromIds = (
-  ids: string[] | undefined,
-  bankMap: Map<string, RuntimeBankSummary>,
-): RuntimeBankSummary[] => {
-  if (!ids || ids.length === 0) {
-    return [];
-  }
-  return ids
-    .map((id) => bankMap.get(id))
-    .filter((bank): bank is RuntimeBankSummary => Boolean(bank));
+const sumBucket = (tags: string[], totals: Map<string, number>): number =>
+  tags.reduce((total, tag) => total + (totals.get(tag) ?? 0), 0);
+
+const extractTagTotals = (analysis: Analysis): Map<string, number> => {
+  const totals = new Map<string, number>();
+  analysis.summaries.tagTotals.forEach((entry) => totals.set(entry.tag, entry.bytes));
+  return totals;
 };
 
-const collectBanksFromGroup = (
-  groupId: string | undefined,
-  groupMap: Map<string, RuntimeGroupSummary>,
-  bankMap: Map<string, RuntimeBankSummary>,
-): RuntimeBankSummary[] => {
-  if (!groupId) {
-    return [];
-  }
-  const group = groupMap.get(groupId);
-  if (!group) {
-    return [];
-  }
-  return collectBanksFromIds(group.bankIds, bankMap);
-};
-
-const collectRegionIds = (
-  banks: RuntimeBankSummary[],
-  regionMap: Map<string, Region>,
-  predicate?: (region: Region) => boolean,
-): string[] => {
-  if (banks.length === 0) {
-    return [];
-  }
-  const ids = new Set<string>();
-  banks.forEach((bank) => {
-    bank.contributors.forEach((contributor) => {
-      const region = regionMap.get(contributor.regionId);
-      if (!region) {
-        return;
-      }
-      if (predicate && !predicate(region)) {
-        return;
-      }
-      ids.add(region.id);
-    });
-  });
-  return Array.from(ids);
-};
-
-const sectionsForRegionIds = (analysis: Analysis, regionIds: string[]): Section[] => {
-  if (regionIds.length === 0) {
-    return [];
-  }
-  const regionSet = new Set(regionIds);
-  return analysis.sections.filter((section) => section.execRegionId && regionSet.has(section.execRegionId));
-};
-
-const computeFromConfig = (
+const buildEntrySummary = (
+  key: string,
+  config: TeensySizeReportEntryConfig,
   analysis: Analysis,
-  config: TeensySizeReportConfig,
-): TeensySizeReportSummary => {
-  const summary: TeensySizeReportSummary = {};
-  const sectionSizes = createSectionSizeMap(analysis.sections);
-
-  const regionMap = new Map<string, Region>();
-  analysis.regions.forEach((region) => regionMap.set(region.id, region));
-
-  const regionSummaryMap = new Map<string, RegionSummary>();
-  analysis.summaries.byRegion.forEach((regionSummary) => regionSummaryMap.set(regionSummary.regionId, regionSummary));
-
-  const bankMap = new Map<string, RuntimeBankSummary>();
-  analysis.summaries.runtimeBanks.forEach((bank) => bankMap.set(bank.bankId, bank));
-
-  const groupMap = new Map<string, RuntimeGroupSummary>();
-  analysis.summaries.runtimeGroups.forEach((group) => groupMap.set(group.groupId, group));
-
-  if (config.flash) {
-    const flashBanks = dedupeBanks([
-      ...collectBanksFromGroup(config.flash.groupId, groupMap, bankMap),
-      ...collectBanksFromIds(config.flash.bankIds, bankMap),
-    ]);
-
-    if (flashBanks.length > 0) {
-      const breakdown = config.flash.sectionBreakdown;
-      const headers = sumSectionNames(sectionSizes, breakdown.headers);
-      const code = sumSectionNames(sectionSizes, breakdown.code);
-      const data = sumSectionNames(sectionSizes, breakdown.data);
-      const flashTotal = headers + code + data;
-      const totalCapacity = flashBanks.reduce((total, bank) => total + bank.capacityBytes, 0);
-      const totalReserved = flashBanks.reduce((total, bank) => total + bank.reservedBytes, 0);
-      const flashAvailable = Math.max(totalCapacity - totalReserved, 0);
-      const freeForFiles = Math.max(flashAvailable - flashTotal, 0);
-
-      summary.flash = {
-        code,
-        data,
-        headers,
-        freeForFiles,
-      };
-    }
+  blockUsage: Map<string, BlockUsage>,
+  tagTotals: Map<string, number>,
+): TeensySizeReportEntrySummary => {
+  const bankConfig = analysis.config.hardwareBanks.find((bank) => bank.id === config.hardwareBankId);
+  if (!bankConfig) {
+    throw new Error(`Report ${key} references unknown hardware bank ${config.hardwareBankId}.`);
   }
 
-  if (config.ram1) {
-    const codeBanks = dedupeBanks(collectBanksFromIds(config.ram1.codeBankIds, bankMap));
-    const dataBanks = dedupeBanks(collectBanksFromIds(config.ram1.dataBankIds, bankMap));
-    const poolBanks = dedupeBanks([
-      ...collectBanksFromGroup(config.ram1.groupId, groupMap, bankMap),
-      ...codeBanks,
-      ...dataBanks,
-    ]);
-
-    if (codeBanks.length > 0 && dataBanks.length > 0 && poolBanks.length > 0) {
-      const codeRegionIds = collectRegionIds(codeBanks, regionMap);
-      const dataRegionIds = collectRegionIds(dataBanks, regionMap);
-
-      const codeSections = sectionsForRegionIds(analysis, codeRegionIds);
-      const dataSections = sectionsForRegionIds(analysis, dataRegionIds);
-
-      const textFast = sumSections(
-        codeSections,
-        (section) => section.flags.alloc && (section.category === 'code' || section.category === 'code_fast'),
-      );
-      const armExidx = sumSections(
-        codeSections,
-        (section) => section.flags.alloc && section.name === '.ARM.exidx',
-      );
-      const codeBytes = textFast + armExidx;
-
-      const granule = config.ram1.codeRoundingGranuleBytes ?? 0;
-      const roundedCodeBytes = granule > 0 && codeBytes > 0 ? Math.ceil(codeBytes / granule) * granule : codeBytes;
-      const padding = Math.max(roundedCodeBytes - codeBytes, 0);
-
-      const dataCategories = config.ram1.dataCategories ?? ['data_init', 'bss'];
-      const dataCategorySet = new Set<SectionCategory>(dataCategories);
-      const variableBytes = sumSections(
-        dataSections,
-        (section) => section.flags.alloc && dataCategorySet.has(section.category),
-      );
-
-      const poolCapacity =
-        config.ram1.sharedCapacityBytes ?? poolBanks.reduce((total, bank) => total + bank.capacityBytes, 0);
-      const poolReserved =
-        config.ram1.sharedCapacityBytes !== undefined
-          ? 0
-          : poolBanks.reduce((total, bank) => total + bank.reservedBytes, 0);
-      const freeForLocalVariables = poolCapacity - poolReserved - roundedCodeBytes - variableBytes;
-
-      summary.ram1 = {
-        code: codeBytes,
-        variables: variableBytes,
-        padding,
-        freeForLocalVariables,
-      };
-    }
+  const bankSummary = analysis.summaries.hardwareBanks.find((summary) => summary.hardwareBankId === bankConfig.id);
+  if (!bankSummary) {
+    throw new Error(`No computed summary found for hardware bank ${bankConfig.id}.`);
   }
 
-  if (config.ram2) {
-    const ram2Banks = dedupeBanks([
-      ...collectBanksFromGroup(config.ram2.groupId, groupMap, bankMap),
-      ...collectBanksFromIds(config.ram2.bankIds, bankMap),
-    ]);
+  const logicalBlocks = analysis.config.logicalBlocks;
+  [...(config.codeBlockIds ?? []), ...(config.dataBlockIds ?? []), ...(config.blockIds ?? [])].forEach((blockId) => {
+    getLogicalBlock(logicalBlocks, blockId);
+  });
 
-    if (ram2Banks.length > 0) {
-      const regionIds = collectRegionIds(ram2Banks, regionMap);
-      const categories = config.ram2.variableCategories ?? ['data_init', 'bss', 'dma', 'other'];
-      const variableBytes = regionIds.reduce((total, regionId) => {
-        const regionSummary = regionSummaryMap.get(regionId);
-        return total + sumRegionCategories(regionSummary, categories);
-      }, 0);
-      const freeForMalloc = ram2Banks.reduce((total, bank) => total + bank.freeBytes, 0);
+  const codeBytes = config.codeBlockIds ? sumBlockUsage(config.codeBlockIds, blockUsage, 'runtime') : undefined;
+  const dataBytes = config.dataBlockIds ? sumBlockUsage(config.dataBlockIds, blockUsage, 'runtime') : undefined;
+  const totalBlockBytes = config.blockIds ? sumBlockUsage(config.blockIds, blockUsage, 'total') : undefined;
 
-      summary.ram2 = {
-        variables: variableBytes,
-        freeForMalloc,
-      };
-    }
+  const bucketTotals: Record<string, number> = {};
+  if (config.tagBuckets) {
+    Object.entries(config.tagBuckets).forEach(([bucketName, tags]) => {
+      bucketTotals[bucketName] = sumBucket(tags, tagTotals);
+    });
   }
 
-  return summary;
+  return {
+    hardwareBankId: bankConfig.id,
+    capacityBytes: bankConfig.capacityBytes,
+    rawUsedBytes: bankSummary.rawUsedBytes,
+    adjustedUsedBytes: bankSummary.adjustedUsedBytes,
+    freeBytes: bankSummary.freeBytes,
+    codeBytes,
+    dataBytes,
+    blockBytes: totalBlockBytes,
+    bucketTotals,
+  };
 };
 
 export const calculateTeensySizeReport = (analysis: Analysis): TeensySizeReportSummary => {
@@ -235,5 +139,13 @@ export const calculateTeensySizeReport = (analysis: Analysis): TeensySizeReportS
     return {};
   }
 
-  return computeFromConfig(analysis, config);
+  const blockUsage = buildBlockUsageIndex(analysis);
+  const tagTotals = extractTagTotals(analysis);
+
+  const result: TeensySizeReportSummary = {};
+  Object.entries(config).forEach(([key, entry]) => {
+    result[key] = buildEntrySummary(key, entry, analysis, blockUsage, tagTotals);
+  });
+
+  return result;
 };

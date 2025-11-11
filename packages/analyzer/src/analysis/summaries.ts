@@ -1,357 +1,326 @@
 import {
-  Region,
+  AddressUsageKind,
+  HardwareBankSummary,
+  MemoryMapConfig,
   Section,
-  SectionCategory,
   Summaries,
-  TotalsSummary,
-  RegionSummary,
-  FileOnlySummary,
-  RuntimeBankConfig,
-  RuntimeGroupConfig,
-  RuntimeBankSummary,
-  RuntimeGroupSummary,
-  RuntimeBankContributorSummary,
+  TagUsageSummary,
+  WindowSummary,
 } from '../model';
 
-const zeroTotals = (): TotalsSummary => ({
-  flashUsed: 0,
-  flashCode: 0,
-  flashConst: 0,
-  flashInitImages: 0,
-  ramUsed: 0,
-  ramCode: 0,
-  ramDataInit: 0,
-  ramBss: 0,
-  ramDma: 0,
-});
+import {
+  HardwareBankWindowBreakdown,
+  HardwareBankBlockBreakdown,
+  HardwareBankRoundingDetail,
+  WindowCategoryBreakdown,
+  WindowBlockBreakdown,
+  WindowSectionPlacement,
+} from '../model';
 
-const createCategoryAccumulator = (): Partial<Record<SectionCategory, number>> => ({
-  code: 0,
-  code_fast: 0,
-  rodata: 0,
-  data_init: 0,
-  bss: 0,
-  dma: 0,
-  other: 0,
-});
-
-const addToCategoryMap = (
-  map: Partial<Record<SectionCategory, number>>,
-  category: SectionCategory,
-  size: number,
-): void => {
-  const current = map[category] ?? 0;
-  map[category] = current + size;
-};
-
-const accumulateTotals = (
-  totals: TotalsSummary,
-  regionKind: Region['kind'],
-  category: SectionCategory,
-  size: number,
-): void => {
-  if (size === 0) {
-    return;
-  }
-
-  switch (regionKind) {
-    case 'flash':
-      totals.flashUsed += size;
-      if (category === 'code' || category === 'code_fast') {
-        totals.flashCode += size;
-      } else if (category === 'rodata') {
-        totals.flashConst += size;
-      }
-      break;
-    case 'code_ram':
-      totals.ramUsed += size;
-      if (category === 'code' || category === 'code_fast') {
-        totals.ramCode += size;
-      } else if (category === 'data_init') {
-        totals.ramDataInit += size;
-      } else if (category === 'bss') {
-        totals.ramBss += size;
-      }
-      break;
-    case 'data_ram':
-      totals.ramUsed += size;
-      if (category === 'data_init') {
-        totals.ramDataInit += size;
-      } else if (category === 'bss') {
-        totals.ramBss += size;
-      }
-      break;
-    case 'dma_ram':
-      totals.ramUsed += size;
-      totals.ramDma += size;
-      break;
-    case 'ext_ram':
-    case 'other':
-      totals.ramUsed += size;
-      break;
-  }
-};
-
-const sumReservedBytes = (region: Region): number =>
-  (region.reserved ?? []).reduce((acc, reserve) => acc + reserve.size, 0);
-
-interface RuntimeLayoutConfig {
-  runtimeBanks?: RuntimeBankConfig[];
-  runtimeGroups?: RuntimeGroupConfig[];
+interface WindowAccumulator {
+  total: number;
+  roleMap: Map<AddressUsageKind, number>;
+  categoryMap: Map<string, number>;
+  blockMap: Map<string, number>;
+  placements: WindowSectionPlacement[];
 }
 
-export const calculateSummaries = (
-  regions: Region[],
-  sections: Section[],
-  runtimeLayout: RuntimeLayoutConfig = {},
-): Summaries => {
-  const totals = zeroTotals();
-  const globalCategoryTotals = createCategoryAccumulator();
-  const fileOnlyCategoryTotals = createCategoryAccumulator();
-  let fileOnlyBytes = 0;
+interface AssignmentRecord {
+  sectionId: string;
+  categoryId: string;
+  blockId: string;
+  windowId: string;
+  addressType: AddressUsageKind;
+  size: number;
+  reportTags: string[];
+}
 
-  const byRegion: RegionSummary[] = regions.map((region) => ({
-    regionId: region.id,
-    size: region.size,
-    reserved: sumReservedBytes(region),
-    usedStatic: 0,
-    usedByCategory: createCategoryAccumulator(),
-    freeForDynamic: 0,
-    paddingBytes: 0,
-    largestGapBytes: 0,
-  }));
-
-  const regionMap = new Map<string, Region>();
-  regions.forEach((region) => regionMap.set(region.id, region));
-
-  const regionSummaryMap = new Map<string, RegionSummary>();
-  byRegion.forEach((summary) => regionSummaryMap.set(summary.regionId, summary));
-
-  const regionExtents = new Map<string, { start: number; size: number }[]>();
-
-  const recordExtent = (regionId: string | undefined, start: number | undefined, size: number): void => {
-    if (!regionId || start === undefined || size === 0) {
-      return;
-    }
-
-    if (!regionExtents.has(regionId)) {
-      regionExtents.set(regionId, []);
-    }
-
-    regionExtents.get(regionId)!.push({ start, size });
+const ensureWindowAccumulator = (map: Map<string, WindowAccumulator>, windowId: string): WindowAccumulator => {
+  const existing = map.get(windowId);
+  if (existing) {
+    return existing;
+  }
+  const created: WindowAccumulator = {
+    total: 0,
+    roleMap: new Map(),
+    categoryMap: new Map(),
+    blockMap: new Map(),
+    placements: [],
   };
+  map.set(windowId, created);
+  return created;
+};
 
-  sections.forEach((section) => {
-    if (section.size === 0 || !section.flags.alloc) {
-      if (section.size > 0 && !section.flags.alloc) {
-        addToCategoryMap(fileOnlyCategoryTotals, section.category, section.size);
-        fileOnlyBytes += section.size;
+const accumulateMap = (map: Map<string, number>, key: string, delta: number): void => {
+  map.set(key, (map.get(key) ?? 0) + delta);
+};
+
+const accumulateRole = (map: Map<AddressUsageKind, number>, role: AddressUsageKind, delta: number): void => {
+  map.set(role, (map.get(role) ?? 0) + delta);
+};
+
+const applyRounding = (value: number, granuleBytes: number, mode: string): number => {
+  if (granuleBytes <= 0 || value <= 0) {
+    return value;
+  }
+
+  const factor = value / granuleBytes;
+  switch (mode) {
+    case 'ceil':
+      return Math.ceil(factor) * granuleBytes;
+    case 'floor':
+      return Math.floor(factor) * granuleBytes;
+    case 'nearest':
+      return Math.round(factor) * granuleBytes;
+    default:
+      return value;
+  }
+};
+
+const computeWindowSpan = (placements: WindowSectionPlacement[]): { span: number; padding: number; largestGap: number } => {
+  if (placements.length === 0) {
+    return { span: 0, padding: 0, largestGap: 0 };
+  }
+
+  const sorted = placements
+    .slice()
+    .sort((a, b) => a.start - b.start || a.size - b.size);
+
+  let currentStart = sorted[0].start;
+  let currentEnd = sorted[0].start + sorted[0].size;
+  let totalSize = sorted[0].size;
+  let largestGap = 0;
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const placement = sorted[index];
+    const start = placement.start;
+    const end = placement.start + placement.size;
+
+    totalSize += placement.size;
+
+    if (start > currentEnd) {
+      const gap = start - currentEnd;
+      if (gap > largestGap) {
+        largestGap = gap;
       }
-      return;
+      currentEnd = end;
+      continue;
     }
 
-    const execRegion = section.execRegionId ? regionMap.get(section.execRegionId) : undefined;
-    const execSummary = section.execRegionId ? regionSummaryMap.get(section.execRegionId) : undefined;
+    if (end > currentEnd) {
+      currentEnd = end;
+    }
+  }
 
-    if (execRegion && execSummary) {
-      execSummary.usedStatic += section.size;
-      addToCategoryMap(execSummary.usedByCategory, section.category, section.size);
-      accumulateTotals(totals, execRegion.kind, section.category, section.size);
-      addToCategoryMap(globalCategoryTotals, section.category, section.size);
-      recordExtent(section.execRegionId, section.vmaStart, section.size);
+  const span = currentEnd - currentStart;
+  const padding = span > totalSize ? span - totalSize : 0;
+  return {
+    span,
+    padding,
+    largestGap,
+  };
+};
+
+const buildWindowSummaries = (
+  config: MemoryMapConfig,
+  windowAccumulators: Map<string, WindowAccumulator>,
+): WindowSummary[] =>
+  config.addressWindows.map((window) => {
+    const accumulator = windowAccumulators.get(window.id);
+    if (!accumulator) {
+      return {
+        windowId: window.id,
+        totalBytes: 0,
+        byRole: [],
+        byCategory: [],
+        byBlock: [],
+        spanBytes: 0,
+        paddingBytes: 0,
+        largestGapBytes: 0,
+        placements: [],
+      };
     }
 
-    const shouldApplyLoadContribution = Boolean(
-      section.loadRegionId && (section.isCopySection || !section.execRegionId),
+    const { span, padding, largestGap } = computeWindowSpan(accumulator.placements);
+
+    const byRole = Array.from(accumulator.roleMap.entries())
+      .filter(([, bytes]) => bytes > 0)
+      .map(([addressType, bytes]) => ({ addressType, bytes }));
+
+    const byCategory: WindowCategoryBreakdown[] = Array.from(accumulator.categoryMap.entries())
+      .filter(([, bytes]) => bytes > 0)
+      .map(([categoryId, bytes]) => ({ categoryId, bytes }));
+
+    const byBlock: WindowBlockBreakdown[] = Array.from(accumulator.blockMap.entries())
+      .filter(([, bytes]) => bytes > 0)
+      .map(([blockId, bytes]) => ({ blockId, bytes }));
+
+    const placements = accumulator.placements
+      .slice()
+      .sort((a, b) => a.start - b.start || a.size - b.size);
+
+    return {
+      windowId: window.id,
+      totalBytes: accumulator.total,
+      byRole,
+      byCategory,
+      byBlock,
+      spanBytes: span,
+      paddingBytes: padding,
+      largestGapBytes: largestGap,
+      placements,
+    };
+  });
+
+const buildHardwareBankSummaries = (
+  config: MemoryMapConfig,
+  assignmentRecords: AssignmentRecord[],
+): HardwareBankSummary[] =>
+  config.hardwareBanks.map((bank) => {
+    const windowSet = new Set(bank.windowIds);
+    const relevantAssignments = assignmentRecords.filter((record) => windowSet.has(record.windowId));
+
+    const rawUsedBytes = relevantAssignments.reduce((total, record) => total + record.size, 0);
+
+    const windowBreakdownMap = new Map<string, number>();
+    relevantAssignments.forEach((record) => accumulateMap(windowBreakdownMap, record.windowId, record.size));
+
+    const blockBreakdownMap = new Map<string, number>();
+    relevantAssignments.forEach((record) => accumulateMap(blockBreakdownMap, record.blockId, record.size));
+
+    const roundingDetails: HardwareBankRoundingDetail[] = [];
+    let adjustedUsedBytes = rawUsedBytes;
+
+    (bank.roundingRules ?? []).forEach((rule) => {
+      const rawBytes = rule.logicalBlockIds.reduce((total, blockId) => total + (blockBreakdownMap.get(blockId) ?? 0), 0);
+      const adjustedBytes = applyRounding(rawBytes, rule.granuleBytes, rule.mode);
+      const deltaBytes = adjustedBytes - rawBytes;
+      adjustedUsedBytes += deltaBytes;
+
+      roundingDetails.push({
+        logicalBlockIds: [...rule.logicalBlockIds],
+        granuleBytes: rule.granuleBytes,
+        mode: rule.mode,
+        rawBytes,
+        adjustedBytes,
+        deltaBytes,
+      });
+    });
+
+    const freeBytes = Math.max(bank.capacityBytes - adjustedUsedBytes, 0);
+
+    const windowBreakdown: HardwareBankWindowBreakdown[] = Array.from(windowBreakdownMap.entries()).map(
+      ([windowId, bytes]) => ({ windowId, bytes }),
     );
 
-    if (shouldApplyLoadContribution) {
-      const loadRegion = section.loadRegionId ? regionMap.get(section.loadRegionId) : undefined;
-      const loadSummary = section.loadRegionId ? regionSummaryMap.get(section.loadRegionId) : undefined;
+    const blockBreakdown: HardwareBankBlockBreakdown[] = Array.from(blockBreakdownMap.entries()).map(
+      ([blockId, bytes]) => ({ blockId, bytes }),
+    );
 
-      if (loadRegion && loadSummary) {
-        loadSummary.usedStatic += section.size;
-        addToCategoryMap(loadSummary.usedByCategory, section.category, section.size);
-
-        if (loadRegion.kind === 'flash') {
-          totals.flashUsed += section.size;
-          totals.flashInitImages += section.size;
-        }
-
-        recordExtent(section.loadRegionId, section.lmaStart ?? section.vmaStart, section.size);
-      }
-    }
+    return {
+      hardwareBankId: bank.id,
+      name: bank.name,
+      description: bank.description,
+      capacityBytes: bank.capacityBytes,
+      rawUsedBytes,
+      adjustedUsedBytes,
+      freeBytes,
+      rounding: roundingDetails,
+      windowBreakdown,
+      blockBreakdown,
+    };
   });
 
-  byRegion.forEach((summary) => {
-    const reserved = summary.reserved;
-    const free = summary.size - summary.usedStatic - reserved;
-    summary.freeForDynamic = free > 0 ? free : 0;
+export const calculateSummaries = (sections: Section[], config: MemoryMapConfig): Summaries => {
+  let runtimeBytes = 0;
+  let loadImageBytes = 0;
+  let fileOnlyBytes = 0;
 
-    const extents = regionExtents.get(summary.regionId) ?? [];
-    if (extents.length === 0) {
-      summary.paddingBytes = 0;
-      summary.largestGapBytes = 0;
+  const fileOnlySections: { sectionId: string; name: string; size: number }[] = [];
+  const categoryRuntimeTotals = new Map<string, number>();
+  const categoryLoadTotals = new Map<string, number>();
+  const windowAccumulators = new Map<string, WindowAccumulator>();
+  const tagTotals = new Map<string, number>();
+  const assignmentRecords: AssignmentRecord[] = [];
+
+  sections.forEach((section) => {
+    if (!section.flags.alloc || section.size === 0 || section.blockAssignments.length === 0) {
+      if (section.size > 0 && !section.flags.alloc) {
+        fileOnlyBytes += section.size;
+        fileOnlySections.push({
+          sectionId: section.id,
+          name: section.name,
+          size: section.size,
+        });
+      }
       return;
     }
 
-    const sorted = extents.slice().sort((a, b) => a.start - b.start);
-    let totalSize = 0;
-    let largestGap = 0;
-    let currentStart = sorted[0].start;
-    let currentEnd = currentStart + sorted[0].size;
-    totalSize += sorted[0].size;
+    const categoryId = section.categoryId ?? 'unknown';
 
-    for (let i = 1; i < sorted.length; i += 1) {
-      const { start, size } = sorted[i];
-      const end = start + size;
-      totalSize += size;
+    section.blockAssignments.forEach((assignment) => {
+      assignmentRecords.push({
+        sectionId: section.id,
+        categoryId,
+        blockId: assignment.blockId,
+        windowId: assignment.windowId,
+        addressType: assignment.addressType,
+        size: assignment.size,
+        reportTags: assignment.reportTags,
+      });
 
-      if (start > currentEnd) {
-        const gap = start - currentEnd;
-        if (gap > largestGap) {
-          largestGap = gap;
-        }
-        currentEnd = end;
+      const windowAccumulator = ensureWindowAccumulator(windowAccumulators, assignment.windowId);
+      windowAccumulator.total += assignment.size;
+      accumulateRole(windowAccumulator.roleMap, assignment.addressType, assignment.size);
+      accumulateMap(windowAccumulator.categoryMap, categoryId, assignment.size);
+      accumulateMap(windowAccumulator.blockMap, assignment.blockId, assignment.size);
+      windowAccumulator.placements.push({
+        sectionId: section.id,
+        blockId: assignment.blockId,
+        addressType: assignment.addressType,
+        start: assignment.address,
+        size: assignment.size,
+      });
+
+      if (assignment.addressType === 'load') {
+        loadImageBytes += assignment.size;
+        accumulateMap(categoryLoadTotals, categoryId, assignment.size);
       } else {
-        if (end > currentEnd) {
-          currentEnd = end;
-        }
+        runtimeBytes += assignment.size;
+        accumulateMap(categoryRuntimeTotals, categoryId, assignment.size);
       }
-    }
 
-    const span = currentEnd - currentStart;
-    const padding = span > totalSize ? span - totalSize : 0;
-    summary.paddingBytes = padding;
-    summary.largestGapBytes = largestGap;
+      assignment.reportTags.forEach((tag) => accumulateMap(tagTotals, tag, assignment.size));
+    });
   });
 
-  const byCategory = Object.entries(globalCategoryTotals).map(([category, bytes]) => ({
-    category: category as SectionCategory,
-    bytes: bytes ?? 0,
+  const categorySummary = config.sectionCategories.map((category) => ({
+    categoryId: category.id,
+    runtimeBytes: categoryRuntimeTotals.get(category.id) ?? 0,
+    loadImageBytes: categoryLoadTotals.get(category.id) ?? 0,
   }));
 
-  const fileOnlyByCategory = Object.entries(fileOnlyCategoryTotals).map(([category, bytes]) => ({
-    category: category as SectionCategory,
-    bytes: bytes ?? 0,
+  const byWindow = buildWindowSummaries(config, windowAccumulators);
+  const hardwareBanks = buildHardwareBankSummaries(config, assignmentRecords);
+
+  const tagTotalsSummary: TagUsageSummary[] = Array.from(tagTotals.entries()).map(([tag, bytes]) => ({
+    tag,
+    bytes,
   }));
-
-  const fileOnly: FileOnlySummary = {
-    totalBytes: fileOnlyBytes,
-    byCategory: fileOnlyByCategory,
-  };
-
-  const runtimeBanks: RuntimeBankSummary[] = [];
-  const runtimeGroups: RuntimeGroupSummary[] = [];
-
-  if (runtimeLayout.runtimeBanks && runtimeLayout.runtimeBanks.length > 0) {
-    runtimeLayout.runtimeBanks.forEach((bankConfig) => {
-      const contributors: RuntimeBankContributorSummary[] = [];
-      let capacity = bankConfig.capacityBytes ?? 0;
-      let usedStatic = 0;
-      let reserved = 0;
-
-      bankConfig.segments.forEach((segment) => {
-        const segmentRegion = regionMap.get(segment.regionId);
-        const segmentSummary = regionSummaryMap.get(segment.regionId);
-        const regionSize = segmentRegion?.size ?? segmentSummary?.size ?? 0;
-        const segmentSize = segment.size ?? regionSize;
-        const regionName = segmentRegion?.name ?? segment.regionId;
-
-        if (segmentSize <= 0) {
-          return;
-        }
-
-        if (bankConfig.capacityBytes === undefined) {
-          capacity += segmentSize;
-        }
-
-        if (!segmentSummary || regionSize <= 0) {
-          contributors.push({
-            regionId: segment.regionId,
-            regionName,
-            sizeBytes: segmentSize,
-            usedStaticBytes: 0,
-            reservedBytes: 0,
-          });
-          return;
-        }
-
-        const ratio = Math.min(1, segmentSize / regionSize);
-        const segmentUsed = Math.round(segmentSummary.usedStatic * ratio);
-        const segmentReserved = Math.round(segmentSummary.reserved * ratio);
-
-        usedStatic += segmentUsed;
-        reserved += segmentReserved;
-
-        contributors.push({
-          regionId: segment.regionId,
-          regionName,
-          sizeBytes: segmentSize,
-          usedStaticBytes: segmentUsed,
-          reservedBytes: segmentReserved,
-        });
-      });
-
-      const free = Math.max(capacity - usedStatic - reserved, 0);
-
-      runtimeBanks.push({
-        bankId: bankConfig.id,
-        name: bankConfig.name,
-        kind: bankConfig.kind,
-        description: bankConfig.description,
-        capacityBytes: capacity,
-        usedStaticBytes: usedStatic,
-        reservedBytes: reserved,
-        freeBytes: free,
-        contributors,
-      });
-    });
-  }
-
-  if (runtimeLayout.runtimeGroups && runtimeLayout.runtimeGroups.length > 0) {
-    const bankSummaryMap = new Map<string, RuntimeBankSummary>();
-    runtimeBanks.forEach((bankSummary) => bankSummaryMap.set(bankSummary.bankId, bankSummary));
-
-    runtimeLayout.runtimeGroups.forEach((groupConfig) => {
-      let capacity = 0;
-      let usedStatic = 0;
-      let reserved = 0;
-
-      const existingBankIds: string[] = [];
-
-      groupConfig.bankIds.forEach((bankId) => {
-        const bank = bankSummaryMap.get(bankId);
-        if (!bank) {
-          return;
-        }
-        existingBankIds.push(bankId);
-        capacity += bank.capacityBytes;
-        usedStatic += bank.usedStaticBytes;
-        reserved += bank.reservedBytes;
-      });
-
-      const free = Math.max(capacity - usedStatic - reserved, 0);
-
-      runtimeGroups.push({
-        groupId: groupConfig.id,
-        name: groupConfig.name,
-        description: groupConfig.description,
-        capacityBytes: capacity,
-        usedStaticBytes: usedStatic,
-        reservedBytes: reserved,
-        freeBytes: free,
-        bankIds: existingBankIds,
-      });
-    });
-  }
 
   return {
-    totals,
-    byRegion,
-    byCategory,
-    fileOnly,
-    runtimeBanks,
-    runtimeGroups,
+    totals: {
+      runtimeBytes,
+      loadImageBytes,
+      fileOnlyBytes,
+    },
+    byCategory: categorySummary,
+    byWindow,
+    hardwareBanks,
+    fileOnly: {
+      totalBytes: fileOnlyBytes,
+      sections: fileOnlySections,
+    },
+    tagTotals: tagTotalsSummary,
   };
 };

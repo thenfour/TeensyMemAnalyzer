@@ -1,118 +1,89 @@
-export type RegionKind =
-  | 'flash'
-  | 'code_ram'
-  | 'data_ram'
-  | 'dma_ram'
-  | 'ext_ram'
-  | 'other';
+export type LogicalBlockRole = 'exec' | 'load' | 'runtime' | (string & {});
 
-export interface RegionReserve {
-  name: string;
-  start: number;
-  size: number;
-}
+export type AddressUsageKind = 'exec' | 'load' | 'runtime';
 
-export interface Region {
+export type RoundingMode = 'ceil' | 'floor' | 'nearest';
+
+export interface AddressWindow {
   id: string;
   name: string;
-  kind: RegionKind;
-  start: number;
-  size: number;
-  reserved?: RegionReserve[];
-}
-
-export type RuntimeBankKind = 'flash' | 'ram' | 'external' | 'other';
-
-export interface RuntimeBankSegmentConfig {
-  regionId: string;
-  start?: number;
-  size?: number;
-}
-
-export interface RuntimeBankConfig {
-  id: string;
-  name: string;
-  kind: RuntimeBankKind;
-  segments: RuntimeBankSegmentConfig[];
   description?: string;
-  capacityBytes?: number;
+  notes?: string;
 }
 
-export interface RuntimeGroupConfig {
+export interface HardwareBankRoundingRule {
+  granuleBytes: number;
+  mode: RoundingMode;
+  logicalBlockIds: string[];
+}
+
+export interface HardwareBank {
   id: string;
   name: string;
-  bankIds: string[];
   description?: string;
+  capacityBytes: number;
+  windowIds: string[];
+  roundingRules?: HardwareBankRoundingRule[];
 }
 
-export interface TeensySizeFlashReportConfig {
-  groupId?: string;
-  bankIds?: string[];
-  sectionBreakdown: {
-    headers: string[];
-    code: string[];
-    data: string[];
-  };
+export interface SectionCategory {
+  id: string;
+  name: string;
+  description?: string;
+  notes?: string;
 }
 
-export interface TeensySizeRam1ReportConfig {
-  groupId?: string;
-  codeBankIds: string[];
-  dataBankIds: string[];
-  codeRoundingGranuleBytes?: number;
-  sharedCapacityBytes?: number;
-  dataCategories?: SectionCategory[];
+export interface LogicalBlock {
+  id: string;
+  name: string;
+  description?: string;
+  categoryId: string;
+  windowId: string;
+  role?: LogicalBlockRole;
+  reportTags?: string[];
+  notes?: string;
 }
 
-export interface TeensySizeRam2ReportConfig {
-  groupId?: string;
-  bankIds?: string[];
-  variableCategories?: SectionCategory[];
+export interface SectionRuleMatch {
+  equals?: string;
+  prefix?: string;
+  suffix?: string;
+  regex?: string;
 }
 
-export interface TeensySizeReportConfig {
-  flash?: TeensySizeFlashReportConfig;
-  ram1?: TeensySizeRam1ReportConfig;
-  ram2?: TeensySizeRam2ReportConfig;
+export interface SectionRule {
+  match: SectionRuleMatch;
+  categoryId: string;
+  notes?: string;
+}
+
+export interface TagBucketsConfig {
+  [bucket: string]: string[];
+}
+
+export interface TeensySizeReportEntryConfig {
+  hardwareBankId: string;
+  codeBlockIds?: string[];
+  dataBlockIds?: string[];
+  blockIds?: string[];
+  tagBuckets?: TagBucketsConfig;
 }
 
 export interface ReportsConfig {
-  teensySize?: TeensySizeReportConfig;
+  teensySize?: Record<string, TeensySizeReportEntryConfig>;
 }
 
-export interface TeensySizeFlashSummary {
-  code: number;
-  data: number;
-  headers: number;
-  freeForFiles: number;
+export interface MemoryMapConfig {
+  targetId: string;
+  displayName?: string;
+  notes?: string;
+  addressWindows: AddressWindow[];
+  hardwareBanks: HardwareBank[];
+  sectionCategories: SectionCategory[];
+  logicalBlocks: LogicalBlock[];
+  sectionRules: SectionRule[];
+  reports?: ReportsConfig;
 }
-
-export interface TeensySizeRam1Summary {
-  code: number;
-  variables: number;
-  padding: number;
-  freeForLocalVariables: number;
-}
-
-export interface TeensySizeRam2Summary {
-  variables: number;
-  freeForMalloc: number;
-}
-
-export interface TeensySizeReportSummary {
-  flash?: TeensySizeFlashSummary;
-  ram1?: TeensySizeRam1Summary;
-  ram2?: TeensySizeRam2Summary;
-}
-
-export type SectionCategory =
-  | 'code'
-  | 'code_fast'
-  | 'rodata'
-  | 'data_init'
-  | 'bss'
-  | 'dma'
-  | 'other';
 
 export interface SectionFlags {
   alloc: boolean;
@@ -121,17 +92,27 @@ export interface SectionFlags {
   tls?: boolean;
 }
 
+export interface SectionBlockAssignment {
+  blockId: string;
+  windowId: string;
+  role?: LogicalBlockRole;
+  addressType: AddressUsageKind;
+  address: number;
+  size: number;
+  reportTags: string[];
+}
+
 export interface Section {
   id: string;
   name: string;
   vmaStart: number;
   size: number;
-  execRegionId?: string;
   lmaStart?: number;
-  loadRegionId?: string;
-  isCopySection?: boolean;
-  category: SectionCategory;
   flags: SectionFlags;
+  categoryId?: string;
+  blockAssignments: SectionBlockAssignment[];
+  primaryBlockId?: string;
+  primaryWindowId?: string;
 }
 
 export type SymbolKind = 'func' | 'object' | 'section' | 'file' | 'other';
@@ -149,7 +130,8 @@ export interface Symbol {
   addr: number;
   size: number;
   sectionId?: string;
-  regionId?: string;
+  blockId?: string;
+  windowId?: string;
   isWeak?: boolean;
   isStatic?: boolean;
   isTls?: boolean;
@@ -171,97 +153,131 @@ export interface BuildInfo {
 }
 
 export interface TotalsSummary {
-  flashUsed: number;
-  flashCode: number;
-  flashConst: number;
-  flashInitImages: number;
-  ramUsed: number;
-  ramCode: number;
-  ramDataInit: number;
-  ramBss: number;
-  ramDma: number;
-}
-
-export interface RegionSummary {
-  regionId: string;
-  size: number;
-  usedStatic: number;
-  usedByCategory: Partial<Record<SectionCategory, number>>;
-  reserved: number;
-  freeForDynamic: number;
-  paddingBytes: number;
-  largestGapBytes: number;
+  runtimeBytes: number;
+  loadImageBytes: number;
+  fileOnlyBytes: number;
 }
 
 export interface CategorySummary {
-  category: SectionCategory;
-  bytes: number;
+  categoryId: string;
+  runtimeBytes: number;
+  loadImageBytes: number;
+}
+
+export interface FileOnlySectionSummary {
+  sectionId: string;
+  name: string;
+  size: number;
 }
 
 export interface FileOnlySummary {
   totalBytes: number;
-  byCategory: CategorySummary[];
+  sections: FileOnlySectionSummary[];
 }
 
-export interface RuntimeBankContributorSummary {
-  regionId: string;
-  regionName: string;
-  sizeBytes: number;
-  usedStaticBytes: number;
-  reservedBytes: number;
+export interface WindowUsageByRole {
+  addressType: AddressUsageKind;
+  bytes: number;
 }
 
-export interface RuntimeBankSummary {
-  bankId: string;
+export interface WindowCategoryBreakdown {
+  categoryId: string;
+  bytes: number;
+}
+
+export interface WindowBlockBreakdown {
+  blockId: string;
+  bytes: number;
+}
+
+export interface WindowSectionPlacement {
+  sectionId: string;
+  blockId: string;
+  addressType: AddressUsageKind;
+  start: number;
+  size: number;
+}
+
+export interface WindowSummary {
+  windowId: string;
+  totalBytes: number;
+  byRole: WindowUsageByRole[];
+  byCategory: WindowCategoryBreakdown[];
+  byBlock: WindowBlockBreakdown[];
+  spanBytes: number;
+  paddingBytes: number;
+  largestGapBytes: number;
+  placements: WindowSectionPlacement[];
+}
+
+export interface HardwareBankRoundingDetail {
+  logicalBlockIds: string[];
+  granuleBytes: number;
+  mode: RoundingMode;
+  rawBytes: number;
+  adjustedBytes: number;
+  deltaBytes: number;
+}
+
+export interface HardwareBankWindowBreakdown {
+  windowId: string;
+  bytes: number;
+}
+
+export interface HardwareBankBlockBreakdown {
+  blockId: string;
+  bytes: number;
+}
+
+export interface HardwareBankSummary {
+  hardwareBankId: string;
   name: string;
-  kind: RuntimeBankKind;
   description?: string;
   capacityBytes: number;
-  usedStaticBytes: number;
-  reservedBytes: number;
+  rawUsedBytes: number;
+  adjustedUsedBytes: number;
   freeBytes: number;
-  contributors: RuntimeBankContributorSummary[];
+  rounding: HardwareBankRoundingDetail[];
+  windowBreakdown: HardwareBankWindowBreakdown[];
+  blockBreakdown: HardwareBankBlockBreakdown[];
 }
 
-export interface RuntimeGroupSummary {
-  groupId: string;
-  name: string;
-  description?: string;
-  capacityBytes: number;
-  usedStaticBytes: number;
-  reservedBytes: number;
-  freeBytes: number;
-  bankIds: string[];
+export interface TagUsageSummary {
+  tag: string;
+  bytes: number;
 }
 
 export interface Summaries {
   totals: TotalsSummary;
-  byRegion: RegionSummary[];
   byCategory: CategorySummary[];
+  byWindow: WindowSummary[];
+  hardwareBanks: HardwareBankSummary[];
   fileOnly: FileOnlySummary;
-  runtimeBanks: RuntimeBankSummary[];
-  runtimeGroups: RuntimeGroupSummary[];
+  tagTotals: TagUsageSummary[];
 }
+
+export interface TeensySizeReportEntrySummary {
+  hardwareBankId: string;
+  capacityBytes: number;
+  rawUsedBytes: number;
+  adjustedUsedBytes: number;
+  freeBytes: number;
+  codeBytes?: number;
+  dataBytes?: number;
+  blockBytes?: number;
+  bucketTotals: Record<string, number>;
+}
+
+export type TeensySizeReportSummary = Record<string, TeensySizeReportEntrySummary>;
 
 export interface Analysis {
   target: TargetInfo;
   build: BuildInfo;
-  regions: Region[];
+  config: MemoryMapConfig;
   sections: Section[];
   symbols: Symbol[];
   summaries: Summaries;
   reporting: ReportsConfig;
-}
-
-export interface MemoryMapRegionConfig extends Region {}
-
-export interface MemoryMapConfig {
-  targetId: string;
-  displayName?: string;
-  regions: MemoryMapRegionConfig[];
-  runtimeBanks?: RuntimeBankConfig[];
-  runtimeGroups?: RuntimeGroupConfig[];
-  reports?: ReportsConfig;
 }
 
 export const createEmptyAnalysis = (): Analysis => ({
@@ -273,29 +289,31 @@ export const createEmptyAnalysis = (): Analysis => ({
   build: {
     elfPath: '',
   },
-  regions: [],
+  config: {
+    targetId: 'unknown',
+    addressWindows: [],
+    hardwareBanks: [],
+    sectionCategories: [],
+    logicalBlocks: [],
+    sectionRules: [],
+    reports: {},
+  },
   sections: [],
   symbols: [],
   summaries: {
     totals: {
-      flashUsed: 0,
-      flashCode: 0,
-      flashConst: 0,
-      flashInitImages: 0,
-      ramUsed: 0,
-      ramCode: 0,
-      ramDataInit: 0,
-      ramBss: 0,
-      ramDma: 0,
+      runtimeBytes: 0,
+      loadImageBytes: 0,
+      fileOnlyBytes: 0,
     },
-    byRegion: [],
     byCategory: [],
+    byWindow: [],
+    hardwareBanks: [],
     fileOnly: {
       totalBytes: 0,
-      byCategory: [],
+      sections: [],
     },
-    runtimeBanks: [],
-    runtimeGroups: [],
+    tagTotals: [],
   },
   reporting: {},
 });

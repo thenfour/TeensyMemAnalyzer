@@ -76,6 +76,7 @@ For future agent-driven edits (human or AI), keep these guardrails in mind:
   ambiguous, add design notes and require an explicit override instead of assuming.
 - **Correctness first, then convenience.** Reject or error on unmapped sections rather than burying
   them in catch-alls. Reports should fail loudly when inputs drift.
+- **Cleanliness over compatibility** Do not make compromises in architecture or code quality / brevety in the pursuit of keeping backwards compatibility with a design that is obsolete and to be discarded. Make correct clean code, and adjust downstream as necessary. Don't let downstream messiness bleed up into the core design.
 - **Robustness via validation.** Lean on schema checks and targeted assertions so regressions are
   caught early. Document rounding rules and capacities so parity tests stay meaningful.
 - **Avoid blanket fallbacks.** When a new section appears, force an explicit category assignment.

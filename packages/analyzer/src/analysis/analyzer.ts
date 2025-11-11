@@ -1,20 +1,15 @@
 import path from 'path';
 import { loadMemoryMap } from '../config/loader';
-import {
-  Analysis,
-  AnalyzeBuildParams,
-  createEmptyAnalysis,
-  MemoryMapConfig,
-  Region,
-} from '../model';
+import { Analysis, AnalyzeBuildParams, createEmptyAnalysis } from '../model';
 import { resolveToolchain } from '../toolchain/resolver';
 import { runCommand } from '../utils/exec';
 import { parseReadelfSections } from '../parsers/readelf';
 import { parseObjdumpSectionHeaders } from '../parsers/objdump';
 import { parseNmOutput } from '../parsers/nm';
-import { assignRegionsToSections } from './region-assignment';
 import { assignSymbolsToSections } from './symbol-assignment';
 import { calculateSummaries } from './summaries';
+import { applySectionCategories } from './section-classification';
+import { assignBlocksToSections } from './block-assignment';
 
 const deriveTargetName = (targetId: string): string => {
   switch (targetId) {
@@ -26,12 +21,6 @@ const deriveTargetName = (targetId: string): string => {
       return targetId;
   }
 };
-
-const mapRegions = (config: MemoryMapConfig): Region[] =>
-  config.regions.map((regionConfig) => ({
-    ...regionConfig,
-    reserved: regionConfig.reserved ?? [],
-  }));
 
 export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis> => {
   const { elfPath, mapPath, targetId } = params;
@@ -51,8 +40,7 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
     mapPath: mapPath ? path.resolve(mapPath) : undefined,
     timestamp: new Date().toISOString(),
   };
-
-  analysis.regions = mapRegions(memoryMap);
+  analysis.config = memoryMap;
 
   const sectionsResult = await runCommand(toolchain.readelf, ['-S', analysis.build.elfPath]);
   if (sectionsResult.exitCode !== 0) {
@@ -78,8 +66,9 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
     }
   });
 
-  const regionAssignment = assignRegionsToSections(analysis.regions, sections);
-  analysis.sections = regionAssignment.sections;
+  const categorizedSections = applySectionCategories(sections, memoryMap.sectionRules);
+  const sectionAssignments = assignBlocksToSections(categorizedSections, memoryMap.logicalBlocks);
+  analysis.sections = sectionAssignments;
 
   const nmResult = await runCommand(toolchain.nm, [
     '--print-size',
@@ -98,19 +87,14 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
   const symbolAssignment = assignSymbolsToSections(nmSymbols, analysis.sections);
   analysis.symbols = symbolAssignment.symbols;
 
-  const warnings = [...regionAssignment.warnings, ...symbolAssignment.warnings];
-  if (warnings.length > 0) {
-    // TODO: surface warnings in analysis metadata once available.
-    warnings.forEach((warning) => {
+  if (symbolAssignment.warnings.length > 0) {
+    symbolAssignment.warnings.forEach((warning) => {
       // eslint-disable-next-line no-console
       console.warn(warning);
     });
   }
 
-  analysis.summaries = calculateSummaries(analysis.regions, analysis.sections, {
-    runtimeBanks: memoryMap.runtimeBanks,
-    runtimeGroups: memoryMap.runtimeGroups,
-  });
+  analysis.summaries = calculateSummaries(analysis.sections, memoryMap);
 
   analysis.reporting = memoryMap.reports ?? {};
 

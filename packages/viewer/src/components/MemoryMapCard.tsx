@@ -357,78 +357,78 @@ const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | nul
     }, [span, symbolIndex]);
 
     return (
-        <dl className="memory-map-details-list">
-            <div>
-                <dt>Label</dt>
-                <dd>{span.label}</dd>
-            </div>
-            {span.regionName ? (
+        <div>
+            <dl className="memory-map-details-list">
                 <div>
-                    <dt>Region</dt>
-                    <dd>{span.regionName}</dd>
+                    <dt>Label</dt>
+                    <dd>{span.label}</dd>
                 </div>
-            ) : null}
-            {span.column === 'block' && span.blockName ? (
+                {span.regionName ? (
+                    <div>
+                        <dt>Region</dt>
+                        <dd>{span.regionName}</dd>
+                    </div>
+                ) : null}
+                {span.column === 'block' && span.blockName ? (
+                    <div>
+                        <dt>Block</dt>
+                        <dd>{span.blockName}</dd>
+                    </div>
+                ) : span.blockNames ? (
+                    <div>
+                        <dt>Blocks</dt>
+                        <dd>{span.blockNames.join(', ')}</dd>
+                    </div>
+                ) : null}
+                {span.sectionIds && span.sectionIds.length > 0 ? (
+                    <div>
+                        <dt>Sections</dt>
+                        <dd>{span.sectionIds.join(', ')}</dd>
+                    </div>
+                ) : null}
                 <div>
-                    <dt>Block</dt>
-                    <dd>{span.blockName}</dd>
+                    <dt>Size</dt>
+                    <dd>
+                        <SizeValue value={span.size} />
+                    </dd>
                 </div>
-            ) : span.blockNames ? (
                 <div>
-                    <dt>Blocks</dt>
-                    <dd>{span.blockNames.join(', ')}</dd>
+                    <dt>Start</dt>
+                    <dd>
+                        {renderAddress(span.startAddress)}
+                    </dd>
                 </div>
-            ) : null}
-            {span.sectionIds && span.sectionIds.length > 0 ? (
                 <div>
-                    <dt>Sections</dt>
-                    <dd>{span.sectionIds.join(', ')}</dd>
+                    <dt>End</dt>
+                    <dd>
+                        {renderAddress(span.endAddress)}
+                    </dd>
                 </div>
-            ) : null}
-            <div>
-                <dt>Size</dt>
-                <dd>
-                    <SizeValue value={span.size} />
-                </dd>
-            </div>
-            <div>
-                <dt>Start</dt>
-                <dd>
-                    {renderAddress(span.startAddress)}
-                </dd>
-            </div>
-            <div>
-                <dt>End</dt>
-                <dd>
-                    {renderAddress(span.endAddress)}
-                </dd>
-            </div>
-            <div>
-                <dt>Type</dt>
-                <dd>
-                    {(() => {
-                        switch (span.type) {
-                            case 'occupied':
-                                return 'Occupied';
-                            case 'reserved':
-                                return 'Reserved';
-                            case 'block':
-                                return 'Block';
-                            case 'padding':
-                                return 'Padding';
-                            default:
-                                return 'Free';
-                        }
-                    })()}
-                </dd>
-            </div>
-            <div>
-                <dt>Top symbols</dt>
-                <dd>
-                    <SymbolContributionTable symbols={topSymbols} emptyMessage="No symbols found in this span." />
-                </dd>
-            </div>
-        </dl>
+                <div>
+                    <dt>Type</dt>
+                    <dd>
+                        {(() => {
+                            switch (span.type) {
+                                case 'occupied':
+                                    return 'Occupied';
+                                case 'reserved':
+                                    return 'Reserved';
+                                case 'block':
+                                    return 'Block';
+                                case 'padding':
+                                    return 'Padding';
+                                default:
+                                    return 'Free';
+                            }
+                        })()}
+                    </dd>
+                </div>
+            </dl>
+            <dt>Top symbols</dt>
+            <dd>
+                <SymbolContributionTable symbols={topSymbols} emptyMessage="No symbols found in this span." />
+            </dd>
+        </div>
     );
 };
 

@@ -561,9 +561,9 @@ const App = (): JSX.Element => {
 
                 <RegionUsageCard regionUsage={regionUsage} lastRunCompletedAt={lastRunCompletedAt} />
 
+                <MemoryMapCard analysis={latestAnalysis} lastRunCompletedAt={lastRunCompletedAt} />
+                <TreemapCard />
                 <section className="placeholder-grid">
-                    <MemoryMapCard />
-                    <TreemapCard />
                 </section>
             </main>
         </div>

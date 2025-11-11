@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { Analysis, Summaries } from '@teensy-mem-explorer/analyzer';
 import { hashColor } from '../utils/color';
 
-export type MemoryMapSpanType = 'occupied' | 'free';
+export type MemoryMapSpanType = 'occupied' | 'free' | 'reserved';
 
 export interface MemoryMapSpan {
     id: string;
@@ -18,6 +18,7 @@ export interface MemoryMapSpan {
     color: string;
     blockIds?: string[];
     blockNames?: string[];
+    reservationId?: string;
 }
 
 export interface MemoryMapBank {
@@ -36,6 +37,7 @@ export interface MemoryMapGroup {
 }
 
 const FREE_COLOR = 'hsl(215 30% 88%)';
+const RESERVED_COLOR = "#f80";//'hsl(24 92% 82%)';
 
 export const useMemoryMapData = (
     analysis: Analysis | null,
@@ -62,10 +64,14 @@ export const useMemoryMapData = (
             const bankLabel = bankSummary.name ?? bankId;
 
             const spans: MemoryMapSpan[] = bankSummary.layout.spans.map((span) => {
-                const isFree = span.kind === 'free';
-                const color = isFree
-                    ? FREE_COLOR
-                    : hashColor(`bank:${bankId}:${span.windowId ?? span.id}`);
+                let color: string;
+                if (span.kind === 'free') {
+                    color = FREE_COLOR;
+                } else if (span.kind === 'reserved') {
+                    color = RESERVED_COLOR;
+                } else {
+                    color = hashColor(`bank:${bankId}:${span.windowId ?? span.id}`);
+                }
 
                 const regionName = span.windowId ? windowLabelById.get(span.windowId) : undefined;
                 const blockIds = span.blockIds ?? [];
@@ -74,7 +80,7 @@ export const useMemoryMapData = (
                     id: `${bankId}:${span.id}`,
                     bankId,
                     groupId: bankId,
-                    type: isFree ? 'free' : 'occupied',
+                    type: span.kind,
                     label: span.label,
                     start: span.startOffset,
                     end: span.endOffset,
@@ -84,6 +90,7 @@ export const useMemoryMapData = (
                     color,
                     blockIds: blockIds.length > 0 ? blockIds : undefined,
                     blockNames: blockNames.length > 0 ? blockNames : undefined,
+                    reservationId: span.reservationId,
                 } satisfies MemoryMapSpan;
 
                 spansById.set(memorySpan.id, memorySpan);

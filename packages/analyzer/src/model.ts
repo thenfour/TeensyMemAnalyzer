@@ -11,6 +11,15 @@ export interface AddressWindow {
   notes?: string;
   baseAddress?: number;
   sizeBytes?: number;
+  reservations?: AddressWindowReservation[];
+}
+
+export interface AddressWindowReservation {
+  id: string;
+  label: string;
+  sizeBytes: number;
+  startOffset: number;
+  notes?: string;
 }
 
 export interface HardwareBankRoundingRule {
@@ -231,7 +240,7 @@ export interface HardwareBankBlockBreakdown {
   bytes: number;
 }
 
-export type HardwareBankSpanKind = 'occupied' | 'free';
+export type HardwareBankSpanKind = 'occupied' | 'free' | 'reserved';
 
 export interface HardwareBankLayoutSpan {
   id: string;
@@ -242,6 +251,7 @@ export interface HardwareBankLayoutSpan {
   endOffset: number;
   windowId?: string;
   blockIds?: string[];
+  reservationId?: string;
 }
 
 export interface HardwareBankLayout {
@@ -257,6 +267,7 @@ export interface HardwareBankSummary {
   rawUsedBytes: number;
   adjustedUsedBytes: number;
   freeBytes: number;
+  reservedBytes: number;
   rounding: HardwareBankRoundingDetail[];
   windowBreakdown: HardwareBankWindowBreakdown[];
   blockBreakdown: HardwareBankBlockBreakdown[];

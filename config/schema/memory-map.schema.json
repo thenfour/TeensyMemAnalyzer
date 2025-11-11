@@ -51,6 +51,12 @@
                     },
                     "notes": {
                         "type": "string"
+                    },
+                    "reservations": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/addressWindowReservation"
+                        }
                     }
                 },
                 "additionalProperties": false
@@ -236,6 +242,35 @@
         }
     },
     "definitions": {
+        "addressWindowReservation": {
+            "type": "object",
+            "required": [
+                "id",
+                "label",
+                "sizeBytes",
+                "startOffset"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "sizeBytes": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "startOffset": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "notes": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": false
+        },
         "roundingRule": {
             "type": "object",
             "required": [

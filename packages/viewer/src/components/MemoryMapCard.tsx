@@ -217,7 +217,13 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
                             </div>
                             <div>
                                 <dt>Type</dt>
-                                <dd>{selectedSpan.type === 'occupied' ? 'Occupied' : 'Free'}</dd>
+                                <dd>
+                                    {selectedSpan.type === 'occupied'
+                                        ? 'Occupied'
+                                        : selectedSpan.type === 'reserved'
+                                            ? 'Reserved'
+                                            : 'Free'}
+                                </dd>
                             </div>
                         </dl>
                     ) : (

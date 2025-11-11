@@ -1,4 +1,12 @@
-import { AddressUsageKind, Analysis, HardwareBankSummary, Summaries, TagUsageSummary, WindowSummary } from '../model';
+import {
+  AddressUsageKind,
+  AddressWindowReservation,
+  Analysis,
+  HardwareBankSummary,
+  Summaries,
+  TagUsageSummary,
+  WindowSummary,
+} from '../model';
 
 import {
   HardwareBankWindowBreakdown,
@@ -167,8 +175,12 @@ const buildWindowSummaries = (
 const buildHardwareBankSummaries = (
   analysis: Analysis,
   assignmentRecords: AssignmentRecord[],
-): HardwareBankSummary[] =>
-  analysis.config.hardwareBanks.map((bank) => {
+): HardwareBankSummary[] => {
+  const reservationsByWindow = new Map<string, AddressWindowReservation[]>(
+    analysis.config.addressWindows.map((window) => [window.id, window.reservations ?? []]),
+  );
+
+  return analysis.config.hardwareBanks.map((bank) => {
     const windowSet = new Set(bank.windowIds);
     const relevantAssignments = assignmentRecords.filter((record) => windowSet.has(record.windowId));
 
@@ -218,7 +230,17 @@ const buildHardwareBankSummaries = (
       });
     });
 
-    const freeBytes = Math.max(bank.capacityBytes - adjustedUsedBytes, 0);
+    const bankReservations = bank.windowIds.flatMap((windowId) =>
+      (reservationsByWindow.get(windowId) ?? []).map((reservation) => ({ ...reservation, windowId })),
+    );
+
+    const totalReservedBytes = bankReservations.reduce((total, reservation) => total + reservation.sizeBytes, 0);
+    const earliestReservationOffset = bankReservations.reduce(
+      (min, reservation) => Math.min(min, reservation.startOffset),
+      bank.capacityBytes,
+    );
+
+    const freeCapacity = Math.max(bank.capacityBytes - adjustedUsedBytes - totalReservedBytes, 0);
 
     const windowBreakdown: HardwareBankWindowBreakdown[] = Array.from(windowBreakdownMap.entries()).map(
       ([windowId, bytes]) => ({ windowId, bytes }),
@@ -248,7 +270,6 @@ const buildHardwareBankSummaries = (
 
     const layoutSpans = [] as HardwareBankSummary['layout']['spans'];
     let cursor = 0;
-    let occupiedTotal = 0;
 
     bank.windowIds.forEach((windowId) => {
       const bytes = windowUsage.get(windowId) ?? 0;
@@ -273,20 +294,52 @@ const buildHardwareBankSummaries = (
       });
 
       cursor = endOffset;
-      occupiedTotal += bytes;
     });
 
-    const layoutFreeBytes = Math.max(bank.capacityBytes - occupiedTotal, 0);
-    if (layoutFreeBytes > 0) {
+    const occupiedTotal = cursor;
+
+    const reservationBoundary = Math.min(earliestReservationOffset, bank.capacityBytes);
+    const potentialFreeBytes = Math.max(reservationBoundary - occupiedTotal, 0);
+    const freeSpanBytes = Math.min(freeCapacity, potentialFreeBytes);
+
+    if (freeSpanBytes > 0) {
+      const startOffset = cursor;
+      const endOffset = startOffset + freeSpanBytes;
       layoutSpans.push({
         id: `${bank.id}:free`,
         label: 'Free',
         kind: 'free',
-        sizeBytes: layoutFreeBytes,
-        startOffset: cursor,
-        endOffset: cursor + layoutFreeBytes,
+        sizeBytes: freeSpanBytes,
+        startOffset,
+        endOffset,
       });
+      cursor = endOffset;
     }
+
+    let reservedCursor = cursor;
+    const sortedReservations = bankReservations
+      .slice()
+      .sort((a, b) => a.startOffset - b.startOffset);
+
+    sortedReservations.forEach((reservation, index) => {
+      const reservationStart = Math.max(reservation.startOffset, reservedCursor);
+      const reservationEnd = reservationStart + reservation.sizeBytes;
+
+      layoutSpans.push({
+        id: `${bank.id}:${reservation.id ?? `reservation-${index}`}`,
+        label: reservation.label,
+        kind: 'reserved',
+        sizeBytes: reservation.sizeBytes,
+        startOffset: reservationStart,
+        endOffset: reservationEnd,
+        windowId: reservation.windowId,
+        reservationId: reservation.id,
+      });
+
+      reservedCursor = reservationEnd;
+    });
+
+    layoutSpans.sort((a, b) => a.startOffset - b.startOffset);
 
     const layout = {
       totalBytes: bank.capacityBytes,
@@ -300,13 +353,15 @@ const buildHardwareBankSummaries = (
       capacityBytes: bank.capacityBytes,
       rawUsedBytes,
       adjustedUsedBytes,
-      freeBytes,
+      freeBytes: freeCapacity,
+      reservedBytes: totalReservedBytes,
       rounding: roundingDetails,
       windowBreakdown,
       blockBreakdown,
       layout,
     };
   });
+};
 
 export const generateSummaries = (analysis: Analysis): Summaries => {
   const { sections, config } = analysis;

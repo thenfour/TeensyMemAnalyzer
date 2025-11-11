@@ -7,7 +7,15 @@
             "id": "FLASH",
             "name": "QSPI Flash",
             "baseAddress": 1610612736,
-            "sizeBytes": 2031616
+            "sizeBytes": 2031616,
+            "reservations": [
+                {
+                    "id": "restore_program",
+                    "label": "Restore Program (reserved)",
+                    "sizeBytes": 65536,
+                    "startOffset": 1966080
+                }
+            ]
         },
         {
             "id": "ITCM",

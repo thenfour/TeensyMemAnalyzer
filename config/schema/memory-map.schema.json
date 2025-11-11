@@ -4,7 +4,11 @@
     "type": "object",
     "required": [
         "targetId",
-        "regions"
+        "addressWindows",
+        "hardwareBanks",
+        "sectionCategories",
+        "logicalBlocks",
+        "sectionRules"
     ],
     "properties": {
         "$schema": {
@@ -16,80 +20,16 @@
         "displayName": {
             "type": "string"
         },
-        "regions": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "start",
-                    "size"
-                ],
-                "properties": {
-                    "id": {
-                        "type": "string"
-                    },
-                    "name": {
-                        "type": "string"
-                    },
-                    "kind": {
-                        "type": "string",
-                        "enum": [
-                            "flash",
-                            "code_ram",
-                            "data_ram",
-                            "dma_ram",
-                            "ext_ram",
-                            "other"
-                        ]
-                    },
-                    "start": {
-                        "type": "number",
-                        "minimum": 0
-                    },
-                    "size": {
-                        "type": "number",
-                        "minimum": 0
-                    },
-                    "reserved": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "required": [
-                                "name",
-                                "start",
-                                "size"
-                            ],
-                            "properties": {
-                                "name": {
-                                    "type": "string"
-                                },
-                                "start": {
-                                    "type": "number",
-                                    "minimum": 0
-                                },
-                                "size": {
-                                    "type": "number",
-                                    "minimum": 0
-                                }
-                            }
-                        }
-                    }
-                },
-                "additionalProperties": false
-            }
+        "notes": {
+            "type": "string"
         },
-        "runtimeBanks": {
+        "addressWindows": {
             "type": "array",
             "items": {
                 "type": "object",
                 "required": [
                     "id",
-                    "name",
-                    "kind",
-                    "segments"
+                    "name"
                 ],
                 "properties": {
                     "id": {
@@ -97,59 +37,26 @@
                     },
                     "name": {
                         "type": "string"
-                    },
-                    "kind": {
-                        "type": "string",
-                        "enum": [
-                            "flash",
-                            "ram",
-                            "external",
-                            "other"
-                        ]
                     },
                     "description": {
                         "type": "string"
                     },
-                    "capacityBytes": {
-                        "type": "number",
-                        "minimum": 0
-                    },
-                    "segments": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {
-                            "type": "object",
-                            "required": [
-                                "regionId"
-                            ],
-                            "properties": {
-                                "regionId": {
-                                    "type": "string"
-                                },
-                                "start": {
-                                    "type": "number",
-                                    "minimum": 0
-                                },
-                                "size": {
-                                    "type": "number",
-                                    "minimum": 0
-                                }
-                            },
-                            "additionalProperties": false
-                        }
+                    "notes": {
+                        "type": "string"
                     }
                 },
                 "additionalProperties": false
             }
         },
-        "runtimeGroups": {
+        "hardwareBanks": {
             "type": "array",
             "items": {
                 "type": "object",
                 "required": [
                     "id",
                     "name",
-                    "bankIds"
+                    "capacityBytes",
+                    "windowIds"
                 ],
                 "properties": {
                     "id": {
@@ -161,12 +68,111 @@
                     "description": {
                         "type": "string"
                     },
-                    "bankIds": {
+                    "capacityBytes": {
+                        "type": "number",
+                        "minimum": 0
+                    },
+                    "windowIds": {
                         "type": "array",
                         "minItems": 1,
                         "items": {
                             "type": "string"
                         }
+                    },
+                    "roundingRules": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/roundingRule"
+                        }
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "sectionCategories": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "name"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "notes": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "logicalBlocks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "categoryId",
+                    "windowId"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "categoryId": {
+                        "type": "string"
+                    },
+                    "windowId": {
+                        "type": "string"
+                    },
+                    "role": {
+                        "type": "string"
+                    },
+                    "reportTags": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "notes": {
+                        "type": "string"
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "sectionRules": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "match",
+                    "categoryId"
+                ],
+                "properties": {
+                    "match": {
+                        "$ref": "#/definitions/sectionMatch"
+                    },
+                    "categoryId": {
+                        "type": "string"
+                    },
+                    "notes": {
+                        "type": "string"
                     }
                 },
                 "additionalProperties": false
@@ -177,164 +183,108 @@
             "properties": {
                 "teensySize": {
                     "type": "object",
-                    "properties": {
-                        "flash": {
+                    "patternProperties": {
+                        ".+": {
                             "type": "object",
-                            "properties": {
-                                "groupId": {
-                                    "type": "string"
-                                },
-                                "bankIds": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "items": {
-                                        "type": "string"
-                                    }
-                                },
-                                "sectionBreakdown": {
-                                    "type": "object",
-                                    "properties": {
-                                        "headers": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "string"
-                                            }
-                                        },
-                                        "code": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "string"
-                                            }
-                                        },
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "string"
-                                            }
-                                        }
-                                    },
-                                    "required": [
-                                        "headers",
-                                        "code",
-                                        "data"
-                                    ],
-                                    "additionalProperties": false
-                                }
-                            },
                             "required": [
-                                "sectionBreakdown"
+                                "hardwareBankId"
                             ],
-                            "anyOf": [
-                                {
-                                    "required": [
-                                        "groupId"
-                                    ]
-                                },
-                                {
-                                    "required": [
-                                        "bankIds"
-                                    ]
-                                }
-                            ],
-                            "additionalProperties": false
-                        },
-                        "ram1": {
-                            "type": "object",
                             "properties": {
-                                "groupId": {
+                                "hardwareBankId": {
                                     "type": "string"
                                 },
-                                "codeBankIds": {
+                                "codeBlockIds": {
                                     "type": "array",
                                     "minItems": 1,
                                     "items": {
                                         "type": "string"
                                     }
                                 },
-                                "dataBankIds": {
+                                "dataBlockIds": {
                                     "type": "array",
                                     "minItems": 1,
                                     "items": {
                                         "type": "string"
                                     }
                                 },
-                                "codeRoundingGranuleBytes": {
-                                    "type": "number",
-                                    "minimum": 0
-                                },
-                                "sharedCapacityBytes": {
-                                    "type": "number",
-                                    "minimum": 0
-                                },
-                                "dataCategories": {
+                                "blockIds": {
                                     "type": "array",
                                     "minItems": 1,
                                     "items": {
-                                        "type": "string",
-                                        "enum": [
-                                            "code",
-                                            "code_fast",
-                                            "rodata",
-                                            "data_init",
-                                            "bss",
-                                            "dma",
-                                            "other"
-                                        ]
+                                        "type": "string"
                                     }
+                                },
+                                "tagBuckets": {
+                                    "$ref": "#/definitions/tagBuckets"
                                 }
                             },
-                            "required": [
-                                "codeBankIds",
-                                "dataBankIds"
-                            ],
-                            "additionalProperties": false
-                        },
-                        "ram2": {
-                            "type": "object",
-                            "properties": {
-                                "groupId": {
-                                    "type": "string"
-                                },
-                                "bankIds": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "items": {
-                                        "type": "string"
-                                    }
-                                },
-                                "variableCategories": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "items": {
-                                        "type": "string",
-                                        "enum": [
-                                            "code",
-                                            "code_fast",
-                                            "rodata",
-                                            "data_init",
-                                            "bss",
-                                            "dma",
-                                            "other"
-                                        ]
-                                    }
-                                }
-                            },
-                            "anyOf": [
-                                {
-                                    "required": [
-                                        "groupId"
-                                    ]
-                                },
-                                {
-                                    "required": [
-                                        "bankIds"
-                                    ]
-                                }
-                            ],
                             "additionalProperties": false
                         }
                     },
                     "additionalProperties": false
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "definitions": {
+        "roundingRule": {
+            "type": "object",
+            "required": [
+                "granuleBytes",
+                "mode"
+            ],
+            "properties": {
+                "granuleBytes": {
+                    "type": "number",
+                    "minimum": 1
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "ceil",
+                        "floor",
+                        "nearest"
+                    ]
+                },
+                "logicalBlockIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "sectionMatch": {
+            "type": "object",
+            "properties": {
+                "equals": {
+                    "type": "string"
+                },
+                "prefix": {
+                    "type": "string"
+                },
+                "suffix": {
+                    "type": "string"
+                },
+                "regex": {
+                    "type": "string"
+                }
+            },
+            "minProperties": 1,
+            "additionalProperties": false
+        },
+        "tagBuckets": {
+            "type": "object",
+            "patternProperties": {
+                ".+": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
                 }
             },
             "additionalProperties": false

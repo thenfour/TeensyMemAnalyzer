@@ -2,200 +2,466 @@
     "$schema": "./schema/memory-map.schema.json",
     "targetId": "teensy41",
     "displayName": "Teensy 4.1",
-    "regions": [
+    "addressWindows": [
         {
             "id": "FLASH",
-            "name": "QSPI Flash",
-            "kind": "flash",
-            "start": 1610612736,
-            "size": 8388608,
-            "reserved": [
-                {
-                    "name": "flexspi_config",
-                    "start": 1610612736,
-                    "size": 4096
-                },
-                {
-                    "name": "ivt_bootdata",
-                    "start": 1610616832,
-                    "size": 4096
-                },
-                {
-                    "name": "recovery_sector",
-                    "start": 1618739200,
-                    "size": 262144
-                }
-            ]
+            "name": "QSPI Flash"
         },
         {
             "id": "ITCM",
-            "name": "Instruction TCM",
-            "kind": "code_ram",
-            "start": 0,
-            "size": 524288,
-            "reserved": [
-                {
-                    "name": "null_pointer_trap",
-                    "start": 0,
-                    "size": 32
-                }
-            ]
+            "name": "Instruction TCM"
         },
         {
             "id": "DTCM",
-            "name": "Data TCM",
-            "kind": "data_ram",
-            "start": 536870912,
-            "size": 524288
+            "name": "Data TCM"
         },
         {
-            "id": "DMAMEM",
-            "name": "On-Chip RAM (DMAMEM)",
-            "kind": "dma_ram",
-            "start": 538968064,
-            "size": 524288
+            "id": "OCRAM",
+            "name": "On-Chip RAM (OCRAM)"
         },
         {
             "id": "EXTMEM",
-            "name": "External PSRAM",
-            "kind": "ext_ram",
-            "start": 1879048192,
-            "size": 33554432
+            "name": "External PSRAM"
         }
     ],
-    "reports": {
-        "teensySize": {
-            "flash": {
-                "groupId": "flash",
-                "sectionBreakdown": {
-                    "headers": [
-                        ".text.headers",
-                        ".text.csf"
-                    ],
-                    "code": [
-                        ".text.code",
-                        ".text.itcm",
-                        ".ARM.exidx"
-                    ],
-                    "data": [
-                        ".text.progmem",
-                        ".data"
-                    ]
-                }
-            },
-            "ram1": {
-                "groupId": "ram1",
-                "codeBankIds": [
-                    "ram1_itcm"
-                ],
-                "dataBankIds": [
-                    "ram1_dtcm"
-                ],
-                "codeRoundingGranuleBytes": 32768,
-                "sharedCapacityBytes": 524288,
-                "dataCategories": [
-                    "data_init",
-                    "bss"
-                ]
-            },
-            "ram2": {
-                "groupId": "ram2",
-                "variableCategories": [
-                    "data_init",
-                    "bss",
-                    "dma",
-                    "other"
-                ]
-            }
-        }
-    },
-    "runtimeBanks": [
-        {
-            "id": "flash_exec",
-            "name": "QSPI Flash Runtime",
-            "kind": "flash",
-            "description": "Executable and constant sections stored in on-board flash.",
-            "segments": [
-                {
-                    "regionId": "FLASH"
-                }
-            ]
-        },
-        {
-            "id": "ram1_itcm",
-            "name": "RAM1 ITCM",
-            "kind": "ram",
-            "description": "Instruction TCM used for FASTRUN code.",
-            "segments": [
-                {
-                    "regionId": "ITCM"
-                }
-            ]
-        },
-        {
-            "id": "ram1_dtcm",
-            "name": "RAM1 DTCM",
-            "kind": "ram",
-            "description": "Data TCM backing globals, stack, and heap.",
-            "segments": [
-                {
-                    "regionId": "DTCM"
-                }
-            ]
-        },
-        {
-            "id": "ram2_axi",
-            "name": "RAM2 (DMAMEM)",
-            "kind": "ram",
-            "description": "AXI on-chip RAM shared with DMA and large allocations.",
-            "segments": [
-                {
-                    "regionId": "DMAMEM"
-                }
-            ]
-        },
-        {
-            "id": "psram_external",
-            "name": "External PSRAM",
-            "kind": "external",
-            "description": "Optional PSRAM connected via FlexSPI2.",
-            "segments": [
-                {
-                    "regionId": "EXTMEM"
-                }
-            ]
-        }
-    ],
-    "runtimeGroups": [
+    "hardwareBanks": [
         {
             "id": "flash",
-            "name": "Flash",
-            "bankIds": [
-                "flash_exec"
+            "name": "QSPI Flash",
+            "capacityBytes": 8388608,
+            "windowIds": [
+                "FLASH"
             ]
         },
         {
             "id": "ram1",
             "name": "RAM1",
-            "description": "Combined ITCM and DTCM usage at runtime.",
-            "bankIds": [
-                "ram1_itcm",
-                "ram1_dtcm"
+            "description": "Combined ITCM and DTCM tightly-coupled memory.",
+            "capacityBytes": 524288,
+            "windowIds": [
+                "ITCM",
+                "DTCM"
+            ],
+            "roundingRules": [
+                {
+                    "granuleBytes": 32768,
+                    "mode": "ceil",
+                    "logicalBlockIds": [
+                        "itcm_fastrun"
+                    ]
+                }
             ]
         },
         {
             "id": "ram2",
             "name": "RAM2",
-            "bankIds": [
-                "ram2_axi"
+            "description": "On-chip AXI RAM shared with DMA and large allocations.",
+            "capacityBytes": 524288,
+            "windowIds": [
+                "OCRAM"
             ]
         },
         {
             "id": "external",
-            "name": "External RAM",
-            "bankIds": [
-                "psram_external"
+            "name": "External PSRAM",
+            "capacityBytes": 33554432,
+            "windowIds": [
+                "EXTMEM"
             ]
         }
-    ]
+    ],
+    "sectionCategories": [
+        {
+            "id": "flash_headers",
+            "name": "Flash Headers"
+        },
+        {
+            "id": "flash_code",
+            "name": "Flash Code"
+        },
+        {
+            "id": "fastrun",
+            "name": "FASTRUN Code"
+        },
+        {
+            "id": "flash_rodata",
+            "name": "Flash Constants"
+        },
+        {
+            "id": "dtcm_data_init",
+            "name": "RAM1 Initialised Data"
+        },
+        {
+            "id": "dtcm_bss",
+            "name": "RAM1 BSS"
+        },
+        {
+            "id": "dtcm_noinit",
+            "name": "RAM1 NoInit"
+        },
+        {
+            "id": "ocram_data_init",
+            "name": "RAM2 Initialised Data"
+        },
+        {
+            "id": "ocram_bss",
+            "name": "RAM2 BSS"
+        },
+        {
+            "id": "ocram_misc",
+            "name": "RAM2 General"
+        },
+        {
+            "id": "psram_data",
+            "name": "External PSRAM Data"
+        }
+    ],
+    "logicalBlocks": [
+        {
+            "id": "flash_headers",
+            "name": "Flash Headers",
+            "categoryId": "flash_headers",
+            "windowId": "FLASH",
+            "reportTags": [
+                "flash:headers"
+            ]
+        },
+        {
+            "id": "flash_code",
+            "name": "Flash Code",
+            "categoryId": "flash_code",
+            "windowId": "FLASH",
+            "reportTags": [
+                "flash:code"
+            ]
+        },
+        {
+            "id": "flash_fastrun",
+            "name": "Flash FASTRUN",
+            "categoryId": "fastrun",
+            "windowId": "FLASH",
+            "role": "load",
+            "reportTags": [
+                "flash:code"
+            ]
+        },
+        {
+            "id": "itcm_fastrun",
+            "name": "RAM1 FASTRUN",
+            "categoryId": "fastrun",
+            "windowId": "ITCM",
+            "role": "exec",
+            "reportTags": [
+                "ram1:code"
+            ]
+        },
+        {
+            "id": "flash_rodata",
+            "name": "Flash Constants",
+            "categoryId": "flash_rodata",
+            "windowId": "FLASH",
+            "reportTags": [
+                "flash:data"
+            ]
+        },
+        {
+            "id": "flash_dtcm_data",
+            "name": "Flash Backing for RAM1 Data",
+            "categoryId": "dtcm_data_init",
+            "windowId": "FLASH",
+            "role": "load",
+            "reportTags": [
+                "flash:data"
+            ]
+        },
+        {
+            "id": "dtcm_data",
+            "name": "RAM1 Initialised Data",
+            "categoryId": "dtcm_data_init",
+            "windowId": "DTCM",
+            "role": "runtime",
+            "reportTags": [
+                "ram1:data"
+            ]
+        },
+        {
+            "id": "dtcm_bss",
+            "name": "RAM1 BSS",
+            "categoryId": "dtcm_bss",
+            "windowId": "DTCM",
+            "reportTags": [
+                "ram1:bss"
+            ]
+        },
+        {
+            "id": "dtcm_noinit",
+            "name": "RAM1 NoInit",
+            "categoryId": "dtcm_noinit",
+            "windowId": "DTCM",
+            "reportTags": [
+                "ram1:noinit"
+            ]
+        },
+        {
+            "id": "flash_ocram_data",
+            "name": "Flash Backing for RAM2 Data",
+            "categoryId": "ocram_data_init",
+            "windowId": "FLASH",
+            "role": "load",
+            "reportTags": [
+                "flash:data"
+            ]
+        },
+        {
+            "id": "ocram_data",
+            "name": "RAM2 Initialised Data",
+            "categoryId": "ocram_data_init",
+            "windowId": "OCRAM",
+            "role": "runtime",
+            "reportTags": [
+                "ram2:data"
+            ]
+        },
+        {
+            "id": "ocram_bss",
+            "name": "RAM2 BSS",
+            "categoryId": "ocram_bss",
+            "windowId": "OCRAM",
+            "reportTags": [
+                "ram2:bss"
+            ]
+        },
+        {
+            "id": "ocram_misc",
+            "name": "RAM2 General",
+            "categoryId": "ocram_misc",
+            "windowId": "OCRAM",
+            "reportTags": [
+                "ram2:data"
+            ]
+        },
+        {
+            "id": "psram_data",
+            "name": "External PSRAM Data",
+            "categoryId": "psram_data",
+            "windowId": "EXTMEM",
+            "reportTags": [
+                "external:data"
+            ]
+        }
+    ],
+    "sectionRules": [
+        {
+            "match": {
+                "equals": ".text.headers"
+            },
+            "categoryId": "flash_headers"
+        },
+        {
+            "match": {
+                "equals": ".text.csf"
+            },
+            "categoryId": "flash_headers"
+        },
+        {
+            "match": {
+                "equals": ".text.code"
+            },
+            "categoryId": "flash_code"
+        },
+        {
+            "match": {
+                "equals": ".text.flashmem"
+            },
+            "categoryId": "flash_code"
+        },
+        {
+            "match": {
+                "equals": ".ARM.exidx"
+            },
+            "categoryId": "flash_code"
+        },
+        {
+            "match": {
+                "equals": ".ARM.extab"
+            },
+            "categoryId": "flash_code"
+        },
+        {
+            "match": {
+                "equals": ".text.itcm"
+            },
+            "categoryId": "fastrun"
+        },
+        {
+            "match": {
+                "equals": ".text.progmem"
+            },
+            "categoryId": "flash_rodata"
+        },
+        {
+            "match": {
+                "prefix": ".rodata"
+            },
+            "categoryId": "flash_rodata"
+        },
+        {
+            "match": {
+                "equals": ".data"
+            },
+            "categoryId": "dtcm_data_init"
+        },
+        {
+            "match": {
+                "prefix": ".data."
+            },
+            "categoryId": "dtcm_data_init"
+        },
+        {
+            "match": {
+                "equals": ".init_array"
+            },
+            "categoryId": "dtcm_data_init"
+        },
+        {
+            "match": {
+                "equals": ".fini_array"
+            },
+            "categoryId": "dtcm_data_init"
+        },
+        {
+            "match": {
+                "prefix": ".bss"
+            },
+            "categoryId": "dtcm_bss"
+        },
+        {
+            "match": {
+                "prefix": ".sbss"
+            },
+            "categoryId": "dtcm_bss"
+        },
+        {
+            "match": {
+                "prefix": ".noinit"
+            },
+            "categoryId": "dtcm_noinit"
+        },
+        {
+            "match": {
+                "prefix": ".dmadata"
+            },
+            "categoryId": "ocram_data_init"
+        },
+        {
+            "match": {
+                "prefix": ".dmabss"
+            },
+            "categoryId": "ocram_bss"
+        },
+        {
+            "match": {
+                "prefix": ".dma"
+            },
+            "categoryId": "ocram_misc"
+        },
+        {
+            "match": {
+                "prefix": ".extmem"
+            },
+            "categoryId": "psram_data"
+        },
+        {
+            "match": {
+                "prefix": ".psram"
+            },
+            "categoryId": "psram_data"
+        }
+    ],
+    "reports": {
+        "teensySize": {
+            "flash": {
+                "hardwareBankId": "flash",
+                "blockIds": [
+                    "flash_headers",
+                    "flash_code",
+                    "flash_fastrun",
+                    "flash_rodata",
+                    "flash_dtcm_data",
+                    "flash_ocram_data"
+                ],
+                "tagBuckets": {
+                    "headers": [
+                        "flash:headers"
+                    ],
+                    "code": [
+                        "flash:code"
+                    ],
+                    "data": [
+                        "flash:data"
+                    ]
+                }
+            },
+            "ram1": {
+                "hardwareBankId": "ram1",
+                "codeBlockIds": [
+                    "itcm_fastrun"
+                ],
+                "dataBlockIds": [
+                    "dtcm_data"
+                ],
+                "blockIds": [
+                    "itcm_fastrun",
+                    "dtcm_data",
+                    "dtcm_bss",
+                    "dtcm_noinit"
+                ],
+                "tagBuckets": {
+                    "code": [
+                        "ram1:code"
+                    ],
+                    "data": [
+                        "ram1:data"
+                    ],
+                    "bss": [
+                        "ram1:bss"
+                    ],
+                    "noinit": [
+                        "ram1:noinit"
+                    ]
+                }
+            },
+            "ram2": {
+                "hardwareBankId": "ram2",
+                "dataBlockIds": [
+                    "ocram_data",
+                    "ocram_misc"
+                ],
+                "blockIds": [
+                    "ocram_data",
+                    "ocram_bss",
+                    "ocram_misc"
+                ],
+                "tagBuckets": {
+                    "data": [
+                        "ram2:data"
+                    ],
+                    "bss": [
+                        "ram2:bss"
+                    ]
+                }
+            },
+            "external": {
+                "hardwareBankId": "external",
+                "blockIds": [
+                    "psram_data"
+                ],
+                "tagBuckets": {
+                    "data": [
+                        "external:data"
+                    ]
+                }
+            }
+        }
+    }
 }

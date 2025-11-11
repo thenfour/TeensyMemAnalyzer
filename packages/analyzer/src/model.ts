@@ -148,6 +148,7 @@ export interface Symbol {
   isTls?: boolean;
   source?: SourceLocation;
   logicalPath?: string[];
+  aliases?: string[];
 }
 
 export interface TargetInfo {

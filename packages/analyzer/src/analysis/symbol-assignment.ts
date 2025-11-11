@@ -71,8 +71,37 @@ export const assignSymbolsToSections = (
     };
   });
 
+  const deduped: Symbol[] = [];
+  const seen = new Map<string, Symbol>();
+
+  assigned.forEach((symbol) => {
+    const key = `${symbol.addr}:${symbol.size}:${symbol.name}`;
+    const existing = seen.get(key);
+    if (!existing) {
+      deduped.push(symbol);
+      seen.set(key, symbol);
+      return;
+    }
+
+    if (symbol.isWeak && !existing.isWeak) {
+      existing.isWeak = true;
+    }
+    if (symbol.isStatic && !existing.isStatic) {
+      existing.isStatic = true;
+    }
+    if (symbol.isTls && !existing.isTls) {
+      existing.isTls = true;
+    }
+
+    if (symbol.nameMangled && symbol.nameMangled !== existing.nameMangled) {
+      const aliasSet = new Set(existing.aliases ?? []);
+      aliasSet.add(symbol.nameMangled);
+      existing.aliases = Array.from(aliasSet);
+    }
+  });
+
   return {
-    symbols: assigned,
+    symbols: deduped,
     warnings,
   };
 };

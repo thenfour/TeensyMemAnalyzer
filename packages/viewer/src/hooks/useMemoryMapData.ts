@@ -66,7 +66,7 @@ const buildSpansForWindow = (
     const categorySpans: MemoryMapSpan[] = [];
 
     let cursor = sortedPlacements[0].start;
-    let bankStart = cursor;
+    const bankStart = cursor;
     let bankEnd = cursor;
 
     sortedPlacements.forEach((placement, index) => {
@@ -124,7 +124,7 @@ const buildSpansForWindow = (
     const sortedCategorySpans = categorySpans.sort((a, b) => a.start - b.start);
 
     return {
-    id: windowId,
+        id: windowId,
         name: windowLabel,
         start: bankStart,
         end: bankEnd,

@@ -49,7 +49,7 @@ const Tooltip = ({ content, children }: TooltipProps): JSX.Element => {
                 }
             }),
         }),
-        [children, children.props.onBlur, children.props.onFocus, children.props.onKeyDown, children.props.onMouseEnter, children.props.onMouseLeave, handleHide, handleShow],
+        [children, handleHide, handleShow],
     );
 
     if (!content) {

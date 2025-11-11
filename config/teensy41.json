@@ -5,23 +5,33 @@
     "addressWindows": [
         {
             "id": "FLASH",
-            "name": "QSPI Flash"
+            "name": "QSPI Flash",
+            "baseAddress": 1610612736,
+            "sizeBytes": 8388608
         },
         {
             "id": "ITCM",
-            "name": "Instruction TCM"
+            "name": "Instruction TCM",
+            "baseAddress": 0,
+            "sizeBytes": 524288
         },
         {
             "id": "DTCM",
-            "name": "Data TCM"
+            "name": "Data TCM",
+            "baseAddress": 536870912,
+            "sizeBytes": 524288
         },
         {
             "id": "OCRAM",
-            "name": "On-Chip RAM (OCRAM)"
+            "name": "On-Chip RAM (OCRAM)",
+            "baseAddress": 538968064,
+            "sizeBytes": 524288
         },
         {
             "id": "EXTMEM",
-            "name": "External PSRAM"
+            "name": "External PSRAM",
+            "baseAddress": 1879048192,
+            "sizeBytes": 33554432
         }
     ],
     "hardwareBanks": [

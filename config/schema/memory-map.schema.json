@@ -38,6 +38,14 @@
                     "name": {
                         "type": "string"
                     },
+                    "baseAddress": {
+                        "type": "number",
+                        "minimum": 0
+                    },
+                    "sizeBytes": {
+                        "type": "number",
+                        "minimum": 0
+                    },
                     "description": {
                         "type": "string"
                     },

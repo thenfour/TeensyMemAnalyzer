@@ -9,6 +9,8 @@ export interface AddressWindow {
   name: string;
   description?: string;
   notes?: string;
+  baseAddress?: number;
+  sizeBytes?: number;
 }
 
 export interface HardwareBankRoundingRule {

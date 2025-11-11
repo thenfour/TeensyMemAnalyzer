@@ -12,38 +12,74 @@ viewer panels.
 
 - `Section`: Raw sections extracted from the ELF (e.g. `.text.code`, `.bss`). They know their
   virtual/load addresses but no higher-level context.
-- `Region`: A contiguous address range on the MCU (FLASH, ITCM, DTCM, DMAMEM, …). Regions describe
-  start, size, and optional reserved sub-ranges that cannot be used by the linker.
-- `Segment`: A bank entry that references a region (and optional start/size slice). Example: the
-  `ram2_axi` bank has a single segment pointing at the `DMAMEM` region; other boards can split a
-  region into multiple segments to constrain a bank to a subrange.
-- `Runtime bank`: A pool the firmware allocates from at runtime. Example: `ram1_itcm` in
-  `config/teensy40.json` sources bytes from the `ITCM` region and represents the instructions that
-  land in tightly-coupled RAM. Banks can override their capacity when the usable runtime pool is
-  smaller than the raw region slice.
-- `Runtime group`: A higher-level rollup of banks that behave as a shared pool (e.g. `ram1`
-  combines `ram1_itcm` and `ram1_dtcm`). Groups can expose a shared capacity hint so UI and reports
-  cap the total instead of naively summing member banks.
-
+- `Section category`: A reusable semantic label (e.g. `fastrun`, `flash_headers`) that groups one or
+  more sections which should be handled the same way. Categories keep linker quirks out of the
+  hardware descriptions and let reports talk in business terms.
+- `Logical block`: A placement rule that binds a `sectionCategory` to a single `addressWindow`.
+  Blocks can carry optional roles such as `load`, `exec`, or `runtime`, letting the same category
+  appear in multiple windows (FASTRUN executes in ITCM but loads from flash).
+- `Address window`: A contiguous physical range on the MCU (FLASH, ITCM, OCRAM, …). Windows describe
+  *where* bytes land but intentionally omit synthetic size/start metadata—the ELF already carries
+  the true addresses.
+- `Hardware bank`: A capacity-tracked bucket that contains one or more windows. Banks mirror how the
+  MCU markets its memories (RAM1 combines ITCM + DTCM) and expose rounding rules to match tooling
+  like `teensy_size`.
+- `Report tag`: A label attached to logical blocks so reports can aggregate without re-stating the
+  mapping logic. Tag buckets in reports stay stable even when sections/categories evolve.
 
 - **Source artifacts (ELF/MAP)**
-  - `Symbol`: Named ranges inside sections. Symbols inherit the region assigned to their parent
-    section once analysis finishes.
+  - `Symbol`: Named ranges inside sections. Symbols inherit the address window chosen for their
+    parent category after analysis completes.
 - **Logical memory map (`config/*.json`)**
-  - `Reserved range`: A named carve-out inside a region that reduces its usable capacity (boot
-    headers, trap words, etc.).
-- **Runtime layout (also in the config)**
+  - `Design notes`: Optional free-form prose captured in each entity to document hardware trivia or
+    policy decisions.
 - **Analysis output (`analysis.json`)**
-  - `summaries.byRegion`: Usage per region after sections/symbols are mapped.
-  - `summaries.runtimeBanks`: Usage per runtime bank, including contributor details.
-  - `summaries.runtimeGroups`: Aggregated usage per runtime group, carrying the member bank IDs.
-  - `reporting.teensySize`: Stored copy of the report config. The viewer uses shared-capacity hints
-    here to mirror `teensy_size` totals (e.g. `ram1.sharedCapacityBytes = 524288` for Teensy 4.0).
+  - `summaries.byWindow`: Usage per address window (including dual-residency load/exec blocks).
+  - `summaries.hardwareBanks`: Usage per hardware bank with rounding applied.
+  - `reporting.teensySize`: Stored copy of the report config. The viewer and CLI reuse the same
+    definitions to mirror `teensy_size` totals.
 - **Viewer cards**
-  - *Regions*: Shows per-region usage and occupied address ranges straight from `byRegion` plus
-    section-derived spans.
-  - *Runtime Banks*: By default renders `runtimeGroups` so Flash/RAM1/RAM2 totals match
-    `teensy_size`. If a target defines no groups, it falls back to the raw banks list.
+  - *Address windows*: Shows contiguous physical ranges plus the blocks that land in them.
+  - *Hardware banks*: Mirrors the capacity buckets defined in the config so totals stay aligned with
+    the CLI/`teensy_size` output.
+
+---
+
+## Design Rationale
+
+A few principles guided the schema revamp:
+
+- **Let the ELF tell us where bytes live.** Address windows no longer repeat `start`/`size` pairs—
+  the analyzer trusts symbol addresses and surfaces gaps directly from the binary. The config focuses
+  on intent, not duplicating linker math.
+- **Model dual residency explicitly.** FASTRUN code and initialised data exist in flash *and* RAM.
+  Using section categories plus logical blocks means we map the load image and execute image
+  separately, keeping flash usage honest while still reporting RAM consumption.
+- **Keep semantics reusable.** Section categories create a stable vocabulary (`flash_headers`,
+  `ocram_data_init`, …) so adding a new section only requires assigning an existing category. Reports
+  and viewer logic stay untouched.
+- **Reflect the hardware hierarchy.** Address windows capture contiguous ranges (ITCM, DTCM, OCRAM),
+  while hardware banks describe the marketing terms (RAM1, RAM2, FLASH) and aggregate capacity.
+  Rounding rules live on banks because they are a property of the hardware pool, not individual
+  sections.
+- **Make reporting declarative.** Reports reference logical block IDs and tag buckets rather than
+  repeating ELF section names. That keeps CLI parity fields and visualisations in sync even as the
+  linker script evolves.
+
+### Agent-Facing Implementation Principles
+
+For future agent-driven edits (human or AI), keep these guardrails in mind:
+
+- **Precision over guesses.** Prefer explicit matches and schema-validated fields; avoid silent
+  inference when the ELF or config can state the fact directly.
+- **Hardware-accurate modelling.** Treat datasheet boundaries as the source of truth. If the MCU is
+  ambiguous, add design notes and require an explicit override instead of assuming.
+- **Correctness first, then convenience.** Reject or error on unmapped sections rather than burying
+  them in catch-alls. Reports should fail loudly when inputs drift.
+- **Robustness via validation.** Lean on schema checks and targeted assertions so regressions are
+  caught early. Document rounding rules and capacities so parity tests stay meaningful.
+- **Avoid blanket fallbacks.** When a new section appears, force an explicit category assignment.
+  Broad "other" buckets are reserved for intentional aggregation, not as safety nets.
 
 ---
 
@@ -97,20 +133,20 @@ viewer panels.
 ---
 
 ## CLI Output at a Glance
-The CLI prints region totals, category breakdowns, top symbols, and a `Teensy-size fields:` block
+The CLI prints window totals, category breakdowns, top symbols, and a `Teensy-size fields:` block
 that mirrors the canonical [`teensy_size`](https://github.com/PaulStoffregen/teensy_size) utility.
 
-- **FLASH buckets** come straight from linker sections for parity: `code = .text.code + .text.itcm + .ARM.exidx`,
-  `data = .text.progmem + .data`, `headers = .text.headers + .text.csf`. Free space subtracts both
-  the reserved flash sectors defined in the memory map and those buckets from the 0x1F0000-byte
-  Teensy 4.x flash budget.
-- **RAM1 buckets** match `teensy_size` by combining ITCM and DTCM. The ITCM code total (including
-  `.ARM.exidx`) is rounded up to 32 KiB blocks before subtracting `.data + .bss` to report "free
-  for local variables". Padding is the difference between the rounded blocks and the raw code size.
-- **RAM2** reports DMAMEM usage plus `free for malloc/new` from the region summary.
+- **FLASH buckets** draw from the section categories bound to flash-aligned blocks: `headers`
+  captures the FASTBOOT structures, `code` includes pure flash code plus the load copy of FASTRUN,
+  and `data` accounts for PROGMEM constants and RAM initialisation images.
+- **RAM1 buckets** combine ITCM and DTCM automatically by referencing the RAM1 hardware bank. The
+  configured rounding rule ensures FASTRUN code is rounded up to 32 KiB chunks before free space is
+  computed, matching the legacy toolchain.
+- **RAM2 / External RAM** follow the same pattern: totals come from the hardware bank definitions,
+  and tag buckets decide how the CLI labels the bytes.
 
-Alignment gaps inside a region surface under `Alignment padding` whenever the analyzer detects
-non-alloc gaps between sections.
+Alignment gaps inside an address window surface under `Alignment padding` whenever the analyzer
+detects non-ALLOC gaps between sections.
 
 ---
 
@@ -118,7 +154,8 @@ non-alloc gaps between sections.
 - `packages/analyzer/` – TypeScript library that loads memory-map configs, parses ELF/MAP data, and 
   produces the analysis model.
 - `packages/cli/` – CLI wrapper that prints summaries or the full JSON analysis.
-- `config/` – Memory-map definitions (e.g. `teensy40.json`, `teensy41.json`).
+- `config/` – Memory-map definitions (e.g. `teensy40.json`, `teensy41.json`). Each file declares
+  section categories, logical blocks, address windows, hardware banks, and tailored reports.
 - `example/` – Sample firmware, MAP, reference `teensy_size` output, and helper script.
 
 The analyzer keeps the core platform-neutral; Teensy specifics live in config files and CLI formatting logic.

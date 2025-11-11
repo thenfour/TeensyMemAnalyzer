@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
-import type { Analysis, Summaries } from '@teensy-mem-explorer/analyzer';
+import type { Analysis, Summaries, Symbol as AnalyzerSymbol } from '@teensy-mem-explorer/analyzer';
 import { SizeValue } from './SizeValue';
 import AddressValue from './AddressValue';
 import { useMemoryMapData, type MemoryMapSpan, type MemoryMapColumnData } from '../hooks/useMemoryMapData';
@@ -13,19 +13,30 @@ interface MemoryMapCardProps {
     lastRunCompletedAt: Date | null;
 }
 
-interface MemoryMapBankVisualizationProps {
-    bankName: string;
-    columns: MemoryMapColumnData[];
-    bankStart: number;
-    bankEnd: number;
-}
-
 const MEMORY_MAP_DIMENSIONS = {
     width: 360,
     height: 900,
     padding: 0,
     minSpanHeight: 12,
 };
+
+type SymbolIndex = Map<string, AnalyzerSymbol[]>;
+
+interface SymbolContribution {
+    id: string;
+    name: string;
+    size: number;
+    coverage: number;
+    addr: number;
+}
+
+interface MemoryMapBankVisualizationProps {
+    bankName: string;
+    columns: MemoryMapColumnData[];
+    bankStart: number;
+    bankEnd: number;
+    symbolIndex: SymbolIndex;
+}
 
 type MemoryMapStyle = CSSProperties & {
     '--memory-map-bank-width': string;
@@ -39,6 +50,7 @@ const MemoryMapBankVisualization = ({
     columns,
     bankStart,
     bankEnd,
+    symbolIndex,
 }: MemoryMapBankVisualizationProps): JSX.Element => {
     const { width, height, padding, minSpanHeight } = MEMORY_MAP_DIMENSIONS;
     const labelOffset = 24;
@@ -278,20 +290,78 @@ const MemoryMapBankVisualization = ({
                 </svg>
                 <div className="memory-map-bank-details">
                     <h4>Selection details</h4>
-                    <MemoryMapSpanDetails span={selectedSpan} />
+                    <MemoryMapSpanDetails span={selectedSpan} symbolIndex={symbolIndex} />
                 </div>
             </div>
         </div>
     );
 };
 
-const MemoryMapSpanDetails = ({ span }: { span: MemoryMapSpan | null }): JSX.Element => {
+const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | null; symbolIndex: SymbolIndex }): JSX.Element => {
     if (!span) {
         return <p className="memory-map-details-empty">Select a span to inspect its address range and size.</p>;
     }
 
     const renderAddress = (value: number | undefined): JSX.Element =>
         value !== undefined ? <AddressValue value={value} /> : <span className="memory-map-address-unknown">Unknown</span>;
+
+    const topSymbols = useMemo<SymbolContribution[]>(() => {
+        if (!span?.regionId || span.startAddress === undefined || span.endAddress === undefined) {
+            return [];
+        }
+
+        const candidates = symbolIndex.get(span.regionId);
+        if (!candidates || candidates.length === 0) {
+            return [];
+        }
+
+        const spanStart = span.startAddress;
+        const spanEnd = span.endAddress;
+        const contributions: SymbolContribution[] = [];
+
+        for (const symbol of candidates) {
+            const symbolStart = symbol.addr;
+            if (symbolStart >= spanEnd) {
+                break;
+            }
+
+            const symbolSize = Math.max(0, symbol.size);
+            const symbolEnd = symbolStart + symbolSize;
+            if (symbolEnd <= spanStart) {
+                continue;
+            }
+
+            const overlapStart = Math.max(symbolStart, spanStart);
+            const overlapEnd = Math.min(symbolEnd, spanEnd);
+            const coverage = Math.max(0, overlapEnd - overlapStart);
+            if (coverage <= 0) {
+                continue;
+            }
+
+            contributions.push({
+                id: symbol.id,
+                name: symbol.name ?? symbol.id,
+                size: symbolSize,
+                coverage,
+                addr: symbolStart,
+            });
+        }
+
+        contributions.sort((a, b) => {
+            if (b.coverage !== a.coverage) {
+                return b.coverage - a.coverage;
+            }
+            if (b.size !== a.size) {
+                return b.size - a.size;
+            }
+            if (a.addr !== b.addr) {
+                return a.addr - b.addr;
+            }
+            return a.name.localeCompare(b.name);
+        });
+
+        return contributions.slice(0, 8);
+    }, [span, symbolIndex]);
 
     return (
         <dl className="memory-map-details-list">
@@ -359,12 +429,63 @@ const MemoryMapSpanDetails = ({ span }: { span: MemoryMapSpan | null }): JSX.Ele
                     })()}
                 </dd>
             </div>
+            <div>
+                <dt>Top symbols</dt>
+                <dd>
+                    {topSymbols.length > 0 ? (
+                        <ul className="memory-map-symbols-list">
+                            {topSymbols.map((symbol) => (
+                                <li key={symbol.id}>
+                                    <span className="memory-map-symbol-name">{symbol.name}</span>
+                                    <span className="memory-map-symbol-size">
+                                        <SizeValue value={symbol.coverage} />
+                                        {symbol.coverage < symbol.size ? (
+                                            <span className="memory-map-symbol-size-total">
+                                                {' '}
+                                                / <SizeValue value={symbol.size} />
+                                            </span>
+                                        ) : null}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <span className="memory-map-symbols-empty">No symbols found in this span.</span>
+                    )}
+                </dd>
+            </div>
         </dl>
     );
 };
 
 const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCardProps): JSX.Element | null => {
     const { groups } = useMemoryMapData(analysis, summaries);
+
+    const symbolIndex = useMemo<SymbolIndex>(() => {
+        if (!analysis) {
+            return new Map();
+        }
+
+        const map = new Map<string, AnalyzerSymbol[]>();
+        analysis.symbols.forEach((symbol) => {
+            if (!symbol.windowId || symbol.size <= 0) {
+                return;
+            }
+
+            const list = map.get(symbol.windowId);
+            if (list) {
+                list.push(symbol);
+            } else {
+                map.set(symbol.windowId, [symbol]);
+            }
+        });
+
+        map.forEach((list) => {
+            list.sort((a, b) => a.addr - b.addr);
+        });
+
+        return map;
+    }, [analysis]);
 
     const memoryMapStyle = useMemo<MemoryMapStyle>(() => ({
         '--memory-map-bank-width': `${MEMORY_MAP_DIMENSIONS.width}px`,
@@ -404,6 +525,7 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
                                         columns={bank.columns}
                                         bankStart={bank.start}
                                         bankEnd={bank.end}
+                                        symbolIndex={symbolIndex}
                                     />
                                 ))}
                             </div>

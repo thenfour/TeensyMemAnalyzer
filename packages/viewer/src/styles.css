@@ -503,6 +503,45 @@ rect {
     font-style: italic;
 }
 
+.memory-map-symbols-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.memory-map-symbols-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.92rem;
+}
+
+.memory-map-symbol-name {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.memory-map-symbol-size {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: #475569;
+}
+
+.memory-map-symbol-size-total {
+    color: #94a3b8;
+    font-size: 0.85rem;
+}
+
+.memory-map-symbols-empty {
+    color: #64748b;
+    font-style: italic;
+}
+
 .memory-map-legend {
     display: flex;
     flex-wrap: wrap;

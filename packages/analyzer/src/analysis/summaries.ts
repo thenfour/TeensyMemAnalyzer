@@ -282,8 +282,8 @@ const buildHardwareBankSummaries = (
       }
     });
 
-  const layoutSpans = [] as HardwareBankSummary['layout']['spans'];
-  const blockLayoutSpans = [] as HardwareBankSummary['blockLayout']['spans'];
+    const layoutSpans = [] as HardwareBankSummary['layout']['spans'];
+    const blockLayoutSpans = [] as HardwareBankSummary['blockLayout']['spans'];
 
   let cursor = 0;
   let blockSpanCounter = 0;
@@ -322,7 +322,7 @@ const buildHardwareBankSummaries = (
         windowStartAddress = Math.trunc(windowStartAddress);
       }
 
-        windowAddressAnchors.set(windowId, { startOffset, startAddress: windowStartAddress });
+      windowAddressAnchors.set(windowId, { startOffset, startAddress: windowStartAddress });
 
       let windowEndAddress: number | undefined = windowStartAddress !== undefined ? windowStartAddress + allocatedBytes : undefined;
       if (windowEndAddress === undefined) {
@@ -358,7 +358,7 @@ const buildHardwareBankSummaries = (
       layoutSpans.push(windowLayoutSpan);
 
       let windowCursor = startOffset;
-    let currentSpan: HardwareBankSummary['blockLayout']['spans'][number] | null = null;
+      let currentSpan: HardwareBankSummary['blockLayout']['spans'][number] | null = null;
       let windowLastKnownAddress = firstAssignment?.address;
 
       assignments.forEach((assignment) => {

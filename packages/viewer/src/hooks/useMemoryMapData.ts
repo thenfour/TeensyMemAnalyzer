@@ -28,6 +28,7 @@ export interface MemoryMapSpan {
     category?: SectionCategory;
     categoryLabel?: string;
     reservedName?: string;
+    mergedPaddingBytes?: number;
     color: string;
 }
 
@@ -60,6 +61,7 @@ interface OccupiedSlice {
     category?: SectionCategory;
     regionId: string;
     regionName?: string;
+    mergedPaddingBytes: number;
 }
 
 const GAP_MERGE_THRESHOLD = 256; // bytes
@@ -122,6 +124,7 @@ const buildCategorySlices = (region: Region, sections: Section[]): OccupiedSlice
                 category,
                 regionId: region.id,
                 regionName: region.name,
+                mergedPaddingBytes: 0,
             };
             return;
         }
@@ -129,6 +132,9 @@ const buildCategorySlices = (region: Region, sections: Section[]): OccupiedSlice
         if (current.category === category) {
             const gap = start - current.end;
             if (gap <= GAP_MERGE_THRESHOLD) {
+                if (gap > 0) {
+                    current.mergedPaddingBytes += gap;
+                }
                 current.end = Math.max(current.end, end);
                 return;
             }
@@ -143,6 +149,7 @@ const buildCategorySlices = (region: Region, sections: Section[]): OccupiedSlice
             category,
             regionId: region.id,
             regionName: region.name,
+            mergedPaddingBytes: 0,
         };
     });
 
@@ -222,6 +229,7 @@ const buildRegionSlice = (
             category: slice.category,
             categoryLabel: slice.category ? humanizeCategory(slice.category) : undefined,
             reservedName: sliceType === 'reserved' ? slice.label : undefined,
+            mergedPaddingBytes: slice.mergedPaddingBytes > 0 ? slice.mergedPaddingBytes : undefined,
             color: sliceType === 'reserved' ? 'hsl(43 93% 70%)' : hashColor(colorKey),
         });
 
@@ -259,6 +267,7 @@ const buildReservedSlices = (region: Region): OccupiedSlice[] => {
         label: entry.name,
         regionId: region.id,
         regionName: region.name,
+        mergedPaddingBytes: 0,
     }));
 };
 

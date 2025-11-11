@@ -112,18 +112,16 @@ const MemoryMapBankVisualization = ({
                                 stroke={isSelected ? '#2563eb' : '#0f172a33'}
                                 strokeWidth={isSelected ? 2 : 1}
                             />
-                            {effectiveHeight >= 14 ? (
-                                <text
-                                    x={width / 2}
-                                    y={textY}
-                                    textAnchor="middle"
-                                    fontSize={fontSize}
-                                    fill="#0f172a"
-                                    pointerEvents="none"
-                                >
-                                    {span.label}
-                                </text>
-                            ) : null}
+                            <text
+                                x={width / 2}
+                                y={textY}
+                                textAnchor="middle"
+                                fontSize={fontSize}
+                                fill="#0f172a"
+                                pointerEvents="none"
+                            >
+                                {span.label}
+                            </text>
                         </g>
                     );
                 })}
@@ -232,6 +230,12 @@ const MemoryMapCard = ({ analysis, lastRunCompletedAt }: MemoryMapCardProps): JS
                                 <dt>Size</dt>
                                 <dd>
                                     <SizeValue value={selectedSpan.size} />
+                                </dd>
+                            </div>
+                            <div>
+                                <dt>Padding</dt>
+                                <dd>
+                                    <SizeValue value={selectedSpan.mergedPaddingBytes} />
                                 </dd>
                             </div>
                             <div>

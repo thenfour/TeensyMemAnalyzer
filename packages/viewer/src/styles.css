@@ -514,15 +514,27 @@ rect {
 
 .memory-map-symbols-list li {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
     font-size: 0.92rem;
 }
 
 .memory-map-symbol-name {
     font-weight: 600;
     color: #1e293b;
+}
+
+.memory-map-symbol-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.memory-map-symbol-address {
+    font-size: 0.9rem;
+    color: #475569;
 }
 
 .memory-map-symbol-size {

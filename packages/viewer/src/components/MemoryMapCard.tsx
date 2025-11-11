@@ -436,7 +436,10 @@ const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | nul
                         <ul className="memory-map-symbols-list">
                             {topSymbols.map((symbol) => (
                                 <li key={symbol.id}>
-                                    <span className="memory-map-symbol-name">{symbol.name}</span>
+                                    <div className="memory-map-symbol-header">
+                                        <span className="memory-map-symbol-name">{symbol.name}</span>
+                                        <AddressValue value={symbol.addr} className="memory-map-symbol-address" />
+                                    </div>
                                     <span className="memory-map-symbol-size">
                                         <SizeValue value={symbol.coverage} />
                                         {symbol.coverage < symbol.size ? (

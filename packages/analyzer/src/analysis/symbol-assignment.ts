@@ -1,4 +1,4 @@
-import { Section, SectionBlockAssignment, Symbol } from '../model';
+import { Section, SectionBlockAssignment, Symbol, SymbolLocation } from '../model';
 import { NmSymbolInfo } from '../parsers/nm';
 
 const withinSection = (section: Section, address: number): boolean =>
@@ -55,6 +55,39 @@ export const assignSymbolsToSections = (
     }
     const primaryAssignment = selectPrimaryAssignment(section);
 
+    let primaryLocation: SymbolLocation | undefined;
+    const locations: SymbolLocation[] = [];
+
+    if (section && section.blockAssignments.length > 0) {
+      const offsetWithinSection = symbolInfo.address - section.vmaStart;
+      section.blockAssignments.forEach((assignment) => {
+        if (!Number.isFinite(assignment.address)) {
+          return;
+        }
+
+        if (offsetWithinSection < 0 || offsetWithinSection >= assignment.size) {
+          return;
+        }
+
+        const locationAddr = assignment.address + offsetWithinSection;
+        const location: SymbolLocation = {
+          windowId: assignment.windowId,
+          blockId: assignment.blockId,
+          addressType: assignment.addressType,
+          addr: locationAddr,
+        };
+
+        locations.push(location);
+        if (!primaryLocation && assignment === primaryAssignment) {
+          primaryLocation = location;
+        }
+      });
+    }
+
+    if (!primaryLocation && locations.length > 0) {
+      primaryLocation = locations[0];
+    }
+
     return {
       id: `sym_${index}`,
       name: symbolInfo.name,
@@ -63,11 +96,13 @@ export const assignSymbolsToSections = (
       addr: symbolInfo.address,
       size: symbolInfo.size,
       sectionId: section?.id,
-      blockId: primaryAssignment?.blockId,
-      windowId: primaryAssignment?.windowId,
+      blockId: primaryLocation?.blockId ?? primaryAssignment?.blockId,
+      windowId: primaryLocation?.windowId ?? primaryAssignment?.windowId,
       isWeak: isWeak(symbolInfo.typeCode) || undefined,
       isStatic: isStatic(symbolInfo.typeCode) || undefined,
       isTls: undefined,
+      primaryLocation,
+      locations: locations.length > 0 ? locations : undefined,
     };
   });
 
@@ -97,6 +132,35 @@ export const assignSymbolsToSections = (
       const aliasSet = new Set(existing.aliases ?? []);
       aliasSet.add(symbol.nameMangled);
       existing.aliases = Array.from(aliasSet);
+    }
+
+    if (symbol.primaryLocation && !existing.primaryLocation) {
+      existing.primaryLocation = symbol.primaryLocation;
+    }
+
+    if (symbol.locations && symbol.locations.length > 0) {
+      if (existing.locations && existing.locations.length > 0) {
+        const mergedLocations = new Map<string, SymbolLocation>();
+        const addLocation = (location: SymbolLocation): void => {
+          const key = `${location.windowId}:${location.blockId ?? 'none'}:${location.addressType}:${location.addr}`;
+          if (!mergedLocations.has(key)) {
+            mergedLocations.set(key, location);
+          }
+        };
+
+        existing.locations.forEach(addLocation);
+        symbol.locations.forEach(addLocation);
+        existing.locations = Array.from(mergedLocations.values());
+      } else {
+        existing.locations = [...symbol.locations];
+      }
+    }
+
+    if (!existing.blockId && existing.primaryLocation?.blockId) {
+      existing.blockId = existing.primaryLocation.blockId;
+    }
+    if (!existing.windowId && existing.primaryLocation?.windowId) {
+      existing.windowId = existing.primaryLocation.windowId;
     }
   });
 

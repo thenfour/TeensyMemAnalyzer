@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent, CSSProperties } from 'react';
-import type { Analysis, Summaries, Symbol as AnalyzerSymbol } from '@teensy-mem-explorer/analyzer';
+import type { AddressUsageKind, Analysis, Summaries, Symbol as AnalyzerSymbol } from '@teensy-mem-explorer/analyzer';
 import { SizeValue } from './SizeValue';
 import AddressValue from './AddressValue';
 import SymbolContributionTable, { type SymbolContribution } from './SymbolContributionTable';
@@ -21,7 +21,28 @@ const MEMORY_MAP_DIMENSIONS = {
     minSpanHeight: 12,
 };
 
-type SymbolIndex = Map<string, AnalyzerSymbol[]>;
+interface SymbolLocationEntry {
+    id: string;
+    symbolId: string;
+    name: string;
+    addr: number;
+    size: number;
+    addressType: AddressUsageKind;
+}
+
+type SymbolIndex = Map<string, SymbolLocationEntry[]>;
+
+interface AnalyzerSymbolLocationRef {
+    windowId: string;
+    blockId?: string;
+    addressType: AddressUsageKind;
+    addr: number;
+}
+
+type AnalyzerSymbolWithLocations = AnalyzerSymbol & {
+    locations?: AnalyzerSymbolLocationRef[];
+    primaryLocation?: AnalyzerSymbolLocationRef;
+};
 
 const SYMBOL_LIMIT_OPTIONS = [10, 25, 50, 100] as const;
 const DEFAULT_SYMBOL_LIMIT = SYMBOL_LIMIT_OPTIONS[0];
@@ -327,13 +348,13 @@ const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | nul
         const spanEnd = span.endAddress;
         const contributions: SymbolContribution[] = [];
 
-        for (const symbol of candidates) {
-            const symbolStart = symbol.addr;
+        for (const location of candidates) {
+            const symbolStart = location.addr;
             if (symbolStart >= spanEnd) {
                 break;
             }
 
-            const symbolSize = Math.max(0, symbol.size);
+            const symbolSize = Math.max(0, location.size);
             const symbolEnd = symbolStart + symbolSize;
             if (symbolEnd <= spanStart) {
                 continue;
@@ -347,8 +368,8 @@ const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | nul
             }
 
             contributions.push({
-                id: symbol.id,
-                name: symbol.name ?? symbol.id,
+                id: location.id,
+                name: location.name,
                 size: symbolSize,
                 coverage,
                 addr: symbolStart,
@@ -522,22 +543,58 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
             return new Map();
         }
 
-        const map = new Map<string, AnalyzerSymbol[]>();
-        analysis.symbols.forEach((symbol) => {
-            if (!symbol.windowId || symbol.size <= 0) {
+        const map = new Map<string, SymbolLocationEntry[]>();
+        analysis.symbols.forEach((baseSymbol) => {
+            const symbol = baseSymbol as AnalyzerSymbolWithLocations;
+            if (symbol.size <= 0) {
                 return;
             }
 
-            const list = map.get(symbol.windowId);
-            if (list) {
-                list.push(symbol);
-            } else {
-                map.set(symbol.windowId, [symbol]);
-            }
+            const fallbackAddressType: AddressUsageKind = symbol.primaryLocation?.addressType ?? 'exec';
+            const symbolLocations: AnalyzerSymbolLocationRef[] = symbol.locations && symbol.locations.length > 0
+                ? symbol.locations
+                : symbol.windowId
+                    ? [{
+                        windowId: symbol.windowId,
+                        blockId: symbol.blockId,
+                        addressType: fallbackAddressType,
+                        addr: symbol.addr,
+                    }]
+                    : [];
+
+            symbolLocations.forEach((location: AnalyzerSymbolLocationRef, locationIndex: number) => {
+                if (!location.windowId) {
+                    return;
+                }
+
+                const entry: SymbolLocationEntry = {
+                    id: `${symbol.id}@${location.windowId}:${location.addressType}:${location.addr}:${locationIndex}`,
+                    symbolId: symbol.id,
+                    name: symbol.name ?? symbol.id,
+                    addr: location.addr,
+                    size: symbol.size,
+                    addressType: location.addressType,
+                };
+
+                const list = map.get(location.windowId);
+                if (list) {
+                    list.push(entry);
+                } else {
+                    map.set(location.windowId, [entry]);
+                }
+            });
         });
 
         map.forEach((list) => {
-            list.sort((a, b) => a.addr - b.addr);
+            list.sort((a, b) => {
+                if (a.addr !== b.addr) {
+                    return a.addr - b.addr;
+                }
+                if (a.name !== b.name) {
+                    return a.name.localeCompare(b.name);
+                }
+                return a.id.localeCompare(b.id);
+            });
         });
 
         return map;

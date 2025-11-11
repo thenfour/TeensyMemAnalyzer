@@ -218,10 +218,23 @@ const printTopSymbols = async (context: PrintContext): Promise<void> => {
 
   console.log('\nTop symbols (window/block):');
   for (const symbol of topSymbols) {
+    const extendedSymbol = symbol as AnalysisSymbol & {
+      primaryLocation?: {
+        windowId?: string;
+        blockId?: string;
+      };
+      locations?: Array<{
+        windowId?: string;
+        blockId?: string;
+      }>;
+    };
+
     const location = await context.lookupSymbolSource(symbol);
     const locationSuffix = formatSourceLocationSuffix(location);
-    const windowLabel = symbol.windowId ?? 'unknown-window';
-    const blockLabel = symbol.blockId ? `/${symbol.blockId}` : '';
+    const primaryLocation = extendedSymbol.primaryLocation ?? extendedSymbol.locations?.[0];
+    const windowLabel = primaryLocation?.windowId ?? symbol.windowId ?? 'unknown-window';
+    const blockId = primaryLocation?.blockId ?? symbol.blockId;
+    const blockLabel = blockId ? `/${blockId}` : '';
     console.log(
       `  ${formatBytes(symbol.size).padStart(10)}  ${symbol.name}  (${windowLabel}${blockLabel})${locationSuffix}`,
     );

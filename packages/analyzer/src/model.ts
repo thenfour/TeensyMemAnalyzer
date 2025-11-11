@@ -113,6 +113,13 @@ export interface SectionBlockAssignment {
   reportTags: string[];
 }
 
+export interface SymbolLocation {
+  windowId: string;
+  blockId?: string;
+  addressType: AddressUsageKind;
+  addr: number;
+}
+
 export interface Section {
   id: string;
   name: string;
@@ -149,6 +156,8 @@ export interface Symbol {
   source?: SourceLocation;
   logicalPath?: string[];
   aliases?: string[];
+  primaryLocation?: SymbolLocation;
+  locations?: SymbolLocation[];
 }
 
 export interface TargetInfo {

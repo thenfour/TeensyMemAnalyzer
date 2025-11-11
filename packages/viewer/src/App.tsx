@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
     type Analysis,
     type Summaries,
@@ -78,6 +78,12 @@ const sumBucketValues = (
     entry: TeensySizeReportEntrySummary | undefined,
     buckets: string[],
 ): number => buckets.reduce((total, bucket) => total + getBucketValue(entry, bucket), 0);
+
+const APP_SURFACE_MAX_WIDTH = 1320;
+
+type AppRootStyle = CSSProperties & {
+    '--app-surface-max-width': string;
+};
 
 const App = (): JSX.Element => {
     const { formatValue } = useSizeFormat();
@@ -450,8 +456,15 @@ const App = (): JSX.Element => {
         );
     };
 
+    const appRootStyle = useMemo<AppRootStyle>(
+        () => ({
+            '--app-surface-max-width': `${APP_SURFACE_MAX_WIDTH}px`,
+        }),
+        [],
+    );
+
     return (
-        <div className="app-root">
+        <div className="app-root" style={appRootStyle}>
             <header>
                 <h1>Teensy Memory Explorer Viewer</h1>
                 <p>Select an analyzer JSON output file to explore memory usage visually.</p>

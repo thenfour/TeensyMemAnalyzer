@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { Analysis, Summaries } from '@teensy-mem-explorer/analyzer';
 import { SizeValue } from './SizeValue';
@@ -18,12 +18,10 @@ interface MemoryMapBankVisualizationProps {
     columns: MemoryMapColumnData[];
     bankStart: number;
     bankEnd: number;
-    selectedSpanId: string | null;
-    onSelectSpan: (spanId: string) => void;
 }
 
 const MEMORY_MAP_DIMENSIONS = {
-    width: 280,
+    width: 360,
     height: 900,
     padding: 0,
     minSpanHeight: 12,
@@ -41,12 +39,37 @@ const MemoryMapBankVisualization = ({
     columns,
     bankStart,
     bankEnd,
-    selectedSpanId,
-    onSelectSpan,
 }: MemoryMapBankVisualizationProps): JSX.Element => {
     const { width, height, padding, minSpanHeight } = MEMORY_MAP_DIMENSIONS;
     const labelOffset = 24;
     const layoutHeight = Math.max(1, height - labelOffset);
+
+    const allSpans = useMemo(
+        () => columns.flatMap((column) => column.spans),
+        [columns],
+    );
+
+    const spansById = useMemo(() => {
+        const map = new Map<string, MemoryMapSpan>();
+        allSpans.forEach((span) => {
+            map.set(span.id, span);
+        });
+        return map;
+    }, [allSpans]);
+
+    const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!selectedSpanId) {
+            return;
+        }
+
+        if (!spansById.has(selectedSpanId)) {
+            setSelectedSpanId(null);
+        }
+    }, [selectedSpanId, spansById]);
+
+    const selectedSpan = selectedSpanId ? spansById.get(selectedSpanId) ?? null : null;
 
     const detailColumnIndex = useMemo(
         () => columns.findIndex((column) => column.spans.some((span) => span.column === 'block')),
@@ -178,87 +201,167 @@ const MemoryMapBankVisualization = ({
             <div className="memory-map-bank-header">
                 <span className="memory-map-bank-name">{bankName}</span>
             </div>
-            <svg className="memory-map-svg" viewBox={`0 0 ${width} ${height}`} role="presentation">
-                {columnLayouts.map((column, columnIndex) => {
-                    const trackX = horizontalOffset + columnGap + columnIndex * (trackWidth + columnGap);
-                    const spanX = trackX + (trackWidth - spanWidth) / 2;
-                    const columnLabelY = labelOffset - 8;
+            <div className="memory-map-bank-content">
+                <svg className="memory-map-svg" viewBox={`0 0 ${width} ${height}`} role="presentation">
+                    {columnLayouts.map((column, columnIndex) => {
+                        const trackX = horizontalOffset + columnGap + columnIndex * (trackWidth + columnGap);
+                        const spanX = trackX + (trackWidth - spanWidth) / 2;
+                        const columnLabelY = labelOffset - 8;
 
-                    return (
-                        <g key={`${bankName}:${column.label}`}>
-                            <text
-                                x={trackX + trackWidth / 2}
-                                y={Math.max(12, columnLabelY)}
-                                fill="#334155"
-                                fontSize={12}
-                                textAnchor="middle"
-                                pointerEvents="none"
-                            >
-                                {column.label}
-                            </text>
-                            <rect
-                                className="memory-map-track"
-                                x={trackX}
-                                y={labelOffset}
-                                width={trackWidth}
-                                height={trackHeight}
-                                rx={10}
-                                fill="#f8fafc"
-                                stroke="#cbd5e1"
-                                strokeWidth={1}
-                            />
-                            {column.spans.map(({ span, y, height: spanHeight }) => {
-                                if (spanHeight <= 0) {
-                                    return null;
-                                }
+                        return (
+                            <g key={`${bankName}:${column.label}`}>
+                                <text
+                                    x={trackX + trackWidth / 2}
+                                    y={Math.max(12, columnLabelY)}
+                                    fill="#334155"
+                                    fontSize={12}
+                                    textAnchor="middle"
+                                    pointerEvents="none"
+                                >
+                                    {column.label}
+                                </text>
+                                <rect
+                                    className="memory-map-track"
+                                    x={trackX}
+                                    y={labelOffset}
+                                    width={trackWidth}
+                                    height={trackHeight}
+                                    rx={10}
+                                    fill="#f8fafc"
+                                    stroke="#cbd5e1"
+                                    strokeWidth={1}
+                                />
+                                {column.spans.map(({ span, y, height: spanHeight }) => {
+                                    if (spanHeight <= 0) {
+                                        return null;
+                                    }
 
-                                const isSelected = selectedSpanId === span.id;
-                                const drawY = labelOffset + y;
-                                const clampedHeight = Math.max(spanHeight, 0);
-                                const textY = drawY + clampedHeight / 2 + 4;
-                                const fontSize = Math.min(12, Math.max(10, clampedHeight / 4 + 8));
+                                    const isSelected = selectedSpanId === span.id;
+                                    const drawY = labelOffset + y;
+                                    const clampedHeight = Math.max(spanHeight, 0);
+                                    const textY = drawY + clampedHeight / 2 + 4;
+                                    const fontSize = Math.min(12, Math.max(10, clampedHeight / 4 + 8));
 
-                                return (
-                                    <g
-                                        key={span.id}
-                                        className="memory-map-span"
-                                        onClick={() => onSelectSpan(span.id)}
-                                    >
-                                        <rect
-                                            className="memory-map-span-rect"
-                                            x={spanX}
-                                            y={drawY}
-                                            width={spanWidth}
-                                            height={clampedHeight}
-                                            rx={6}
-                                            fill={span.color}
-                                            stroke={isSelected ? '#2563eb' : '#0f172a33'}
-                                            strokeWidth={isSelected ? 2 : 1}
-                                        />
-                                        <text
-                                            x={trackX + trackWidth / 2}
-                                            y={textY}
-                                            textAnchor="middle"
-                                            fontSize={fontSize}
-                                            fill="#0f172a"
-                                            pointerEvents="none"
+                                    return (
+                                        <g
+                                            key={span.id}
+                                            className="memory-map-span"
+                                            onClick={() => setSelectedSpanId(span.id)}
                                         >
-                                            {span.label}
-                                        </text>
-                                    </g>
-                                );
-                            })}
-                        </g>
-                    );
-                })}
-            </svg>
+                                            <rect
+                                                className="memory-map-span-rect"
+                                                x={spanX}
+                                                y={drawY}
+                                                width={spanWidth}
+                                                height={clampedHeight}
+                                                rx={6}
+                                                fill={span.color}
+                                                stroke={isSelected ? '#2563eb' : '#0f172a33'}
+                                                strokeWidth={isSelected ? 2 : 1}
+                                            />
+                                            <text
+                                                x={trackX + trackWidth / 2}
+                                                y={textY}
+                                                textAnchor="middle"
+                                                fontSize={fontSize}
+                                                fill="#0f172a"
+                                                pointerEvents="none"
+                                            >
+                                                {span.label}
+                                            </text>
+                                        </g>
+                                    );
+                                })}
+                            </g>
+                        );
+                    })}
+                </svg>
+                <div className="memory-map-bank-details">
+                    <h4>Selection details</h4>
+                    <MemoryMapSpanDetails span={selectedSpan} />
+                </div>
+            </div>
         </div>
     );
 };
 
+const MemoryMapSpanDetails = ({ span }: { span: MemoryMapSpan | null }): JSX.Element => {
+    if (!span) {
+        return <p className="memory-map-details-empty">Select a span to inspect its address range and size.</p>;
+    }
+
+    return (
+        <dl className="memory-map-details-list">
+            <div>
+                <dt>Label</dt>
+                <dd>{span.label}</dd>
+            </div>
+            {span.regionName ? (
+                <div>
+                    <dt>Region</dt>
+                    <dd>{span.regionName}</dd>
+                </div>
+            ) : null}
+            {span.column === 'block' && span.blockName ? (
+                <div>
+                    <dt>Block</dt>
+                    <dd>{span.blockName}</dd>
+                </div>
+            ) : span.blockNames ? (
+                <div>
+                    <dt>Blocks</dt>
+                    <dd>{span.blockNames.join(', ')}</dd>
+                </div>
+            ) : null}
+            {span.sectionIds && span.sectionIds.length > 0 ? (
+                <div>
+                    <dt>Sections</dt>
+                    <dd>{span.sectionIds.join(', ')}</dd>
+                </div>
+            ) : null}
+            <div>
+                <dt>Size</dt>
+                <dd>
+                    <SizeValue value={span.size} />
+                </dd>
+            </div>
+            <div>
+                <dt>Start</dt>
+                <dd>
+                    <AddressValue value={span.start} />
+                </dd>
+            </div>
+            <div>
+                <dt>End</dt>
+                <dd>
+                    <AddressValue value={span.end} />
+                </dd>
+            </div>
+            <div>
+                <dt>Type</dt>
+                <dd>
+                    {(() => {
+                        switch (span.type) {
+                            case 'occupied':
+                                return 'Occupied';
+                            case 'reserved':
+                                return 'Reserved';
+                            case 'block':
+                                return 'Block';
+                            case 'padding':
+                                return 'Padding';
+                            default:
+                                return 'Free';
+                        }
+                    })()}
+                </dd>
+            </div>
+        </dl>
+    );
+};
+
 const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCardProps): JSX.Element | null => {
-    const { groups, spansById } = useMemoryMapData(analysis, summaries);
-    const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+    const { groups } = useMemoryMapData(analysis, summaries);
 
     const memoryMapStyle = useMemo<MemoryMapStyle>(() => ({
         '--memory-map-bank-width': `${MEMORY_MAP_DIMENSIONS.width}px`,
@@ -266,8 +369,6 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
         '--memory-map-bank-padding': `${MEMORY_MAP_DIMENSIONS.padding}px`,
         '--memory-map-min-span-height': `${MEMORY_MAP_DIMENSIONS.minSpanHeight}px`,
     }), []);
-
-    const selectedSpan = selectedSpanId ? spansById.get(selectedSpanId) ?? null : null;
 
     if (groups.length === 0) {
         return null;
@@ -300,87 +401,12 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
                                         columns={bank.columns}
                                         bankStart={bank.start}
                                         bankEnd={bank.end}
-                                        selectedSpanId={selectedSpanId}
-                                        onSelectSpan={setSelectedSpanId}
                                     />
                                 ))}
                             </div>
                         </div>
                     ))}
                 </div>
-                <aside className="memory-map-details">
-                    <h3>Selection details</h3>
-                    {selectedSpan ? (
-                        <dl>
-                            <div>
-                                <dt>Label</dt>
-                                <dd>{selectedSpan.label}</dd>
-                            </div>
-                            {selectedSpan.regionName ? (
-                                <div>
-                                    <dt>Region</dt>
-                                    <dd>{selectedSpan.regionName}</dd>
-                                </div>
-                            ) : null}
-                            {selectedSpan.column === 'block' && selectedSpan.blockName ? (
-                                <div>
-                                    <dt>Block</dt>
-                                    <dd>{selectedSpan.blockName}</dd>
-                                </div>
-                            ) : selectedSpan.blockNames ? (
-                                <div>
-                                    <dt>Blocks</dt>
-                                    <dd>{selectedSpan.blockNames.join(', ')}</dd>
-                                </div>
-                            ) : null}
-                            {selectedSpan.sectionIds && selectedSpan.sectionIds.length > 0 ? (
-                                <div>
-                                    <dt>Sections</dt>
-                                    <dd>{selectedSpan.sectionIds.join(', ')}</dd>
-                                </div>
-                            ) : null}
-                            <div>
-                                <dt>Size</dt>
-                                <dd>
-                                    <SizeValue value={selectedSpan.size} />
-                                </dd>
-                            </div>
-                            <div>
-                                <dt>Start</dt>
-                                <dd>
-                                    <AddressValue value={selectedSpan.start} />
-                                </dd>
-                            </div>
-                            <div>
-                                <dt>End</dt>
-                                <dd>
-                                    <AddressValue value={selectedSpan.end} />
-                                </dd>
-                            </div>
-                            <div>
-                                <dt>Type</dt>
-                                <dd>
-                                    {(() => {
-                                        switch (selectedSpan.type) {
-                                            case 'occupied':
-                                                return 'Occupied';
-                                            case 'reserved':
-                                                return 'Reserved';
-                                            case 'block':
-                                                return 'Block';
-                                            case 'padding':
-                                                return 'Padding';
-                                            default:
-                                                return 'Free';
-                                        }
-                                    })()}
-                                </dd>
-                            </div>
-                        </dl>
-                    ) : (
-                        <p>Select a span to inspect its address range and size.</p>
-                    )}
-                </aside>
             </div>
         </section>
     );

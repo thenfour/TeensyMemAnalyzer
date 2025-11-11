@@ -1,4 +1,5 @@
 :root {
+    --app-surface-max-width: 1320px;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: #1f2933;
     background-color: #f8fafc;
@@ -10,7 +11,7 @@ body {
 }
 
 .app-root {
-    max-width: 960px;
+    max-width: var(--app-surface-max-width, 960px);
     margin: 0 auto;
     padding: 2rem 1.5rem 3rem;
 }
@@ -376,10 +377,6 @@ header>p {
     margin-top: 0;
 }
 
-.memory-map-card {
-    gap: 1.5rem;
-}
-
 .memory-map-toggle {
     display: inline-flex;
     border: 1px solid #cbd5e1;
@@ -403,12 +400,11 @@ header>p {
 
 .memory-map-content {
     display: flex;
+    flex-direction: column;
     gap: 1.5rem;
-    flex-wrap: wrap;
 }
 
 .memory-map-groups {
-    flex: 1 1 55%;
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
@@ -420,15 +416,22 @@ header>p {
 
 .memory-map-banks {
     display: flex;
+    flex-direction: column;
     gap: 1.5rem;
-    flex-wrap: wrap;
 }
 
 .memory-map-bank {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    align-items: stretch;
+}
+
+.memory-map-bank-content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    align-items: flex-start;
 }
 
 rect {
@@ -453,22 +456,27 @@ rect {
     height: var(--memory-map-bank-height, 320px);
 }
 
+.memory-map-bank-content .memory-map-svg {
+    flex: 0 0 auto;
+}
+
 .memory-map-span {
     cursor: pointer;
 }
 
-.memory-map-details {
-    flex: 1 1 220px;
+.memory-map-bank-details {
+    flex: 1 1 260px;
+    min-width: 240px;
     background-color: #f1f5f9;
     border-radius: 8px;
     padding: 1rem;
 }
 
-.memory-map-details h3 {
-    margin-top: 0;
+.memory-map-bank-details>h4 {
+    margin: 0 0 0.75rem;
 }
 
-.memory-map-details dl {
+.memory-map-details-list {
     margin: 0;
     display: grid;
     grid-template-columns: auto 1fr;
@@ -476,13 +484,18 @@ rect {
     column-gap: 1rem;
 }
 
-.memory-map-details dt {
+.memory-map-details-list dt {
     font-weight: 600;
     color: #334155;
 }
 
-.memory-map-details dd {
+.memory-map-details-list dd {
     margin: 0;
+}
+
+.memory-map-details-empty {
+    margin: 0;
+    color: #475569;
 }
 
 .memory-map-legend {

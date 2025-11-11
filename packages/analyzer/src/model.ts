@@ -249,6 +249,8 @@ export interface HardwareBankLayoutSpan {
   sizeBytes: number;
   startOffset: number;
   endOffset: number;
+  startAddress?: number;
+  endAddress?: number;
   windowId?: string;
   blockIds?: string[];
   reservationId?: string;
@@ -268,6 +270,8 @@ export interface HardwareBankBlockLayoutSpan {
   sizeBytes: number;
   startOffset: number;
   endOffset: number;
+  startAddress?: number;
+  endAddress?: number;
   windowId?: string;
   blockId?: string;
   reservationId?: string;

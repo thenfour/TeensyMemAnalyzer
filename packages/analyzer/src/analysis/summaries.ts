@@ -282,41 +282,84 @@ const buildHardwareBankSummaries = (
       }
     });
 
-    const layoutSpans = [] as HardwareBankSummary['layout']['spans'];
-    const blockLayoutSpans = [] as HardwareBankSummary['blockLayout']['spans'];
+  const layoutSpans = [] as HardwareBankSummary['layout']['spans'];
+  const blockLayoutSpans = [] as HardwareBankSummary['blockLayout']['spans'];
 
-    let cursor = 0;
-    let blockSpanCounter = 0;
+  let cursor = 0;
+  let blockSpanCounter = 0;
+  let lastWindowEndAddress: number | undefined;
+
+  const windowMetaById = new Map(analysis.config.addressWindows.map((window) => [window.id, window] as const));
+  const windowAddressAnchors = new Map<string, { startOffset: number; startAddress?: number }>();
 
     bank.windowIds.forEach((windowId) => {
       const allocatedBytes = windowUsage.get(windowId) ?? 0;
+      const startOffset = cursor;
       if (allocatedBytes <= 0) {
+        const windowMeta = windowMetaById.get(windowId);
+        windowAddressAnchors.set(windowId, {
+          startOffset,
+          startAddress: windowMeta?.baseAddress,
+        });
         return;
       }
 
-      const windowMeta = analysis.config.addressWindows.find((window) => window.id === windowId);
+      const windowMeta = windowMetaById.get(windowId);
       const label = windowMeta?.name ?? windowId;
-      const startOffset = cursor;
       const endOffset = startOffset + allocatedBytes;
       const windowSpanId = `${bank.id}:${windowId}`;
 
-      layoutSpans.push({
+      const assignments = (assignmentsByWindow.get(windowId) ?? [])
+        .slice()
+        .sort((a, b) => a.address - b.address || a.size - b.size);
+
+      const firstAssignment = assignments[0];
+      const lastAssignment = assignments.length > 0 ? assignments[assignments.length - 1] : undefined;
+      const lastAssignmentEndAddress = lastAssignment ? lastAssignment.address + lastAssignment.size : undefined;
+
+      let windowStartAddress = windowMeta?.baseAddress ?? firstAssignment?.address;
+      if (windowStartAddress !== undefined && Number.isFinite(windowStartAddress)) {
+        windowStartAddress = Math.trunc(windowStartAddress);
+      }
+
+        windowAddressAnchors.set(windowId, { startOffset, startAddress: windowStartAddress });
+
+      let windowEndAddress: number | undefined = windowStartAddress !== undefined ? windowStartAddress + allocatedBytes : undefined;
+      if (windowEndAddress === undefined) {
+        windowEndAddress = lastAssignmentEndAddress;
+      } else if (lastAssignmentEndAddress !== undefined) {
+        windowEndAddress = Math.max(windowEndAddress, lastAssignmentEndAddress);
+      }
+
+      const offsetToAddress = (absoluteOffset: number): number | undefined => {
+        if (windowStartAddress === undefined) {
+          return undefined;
+        }
+        return windowStartAddress + (absoluteOffset - startOffset);
+      };
+
+      const windowEndAddressFromOffset = offsetToAddress(endOffset);
+      if (windowEndAddressFromOffset !== undefined) {
+        windowEndAddress = windowEndAddress === undefined ? windowEndAddressFromOffset : Math.max(windowEndAddress, windowEndAddressFromOffset);
+      }
+
+      const windowLayoutSpan: HardwareBankSummary['layout']['spans'][number] = {
         id: windowSpanId,
         label,
         kind: 'occupied',
         sizeBytes: allocatedBytes,
         startOffset,
         endOffset,
+        startAddress: windowStartAddress,
+        endAddress: windowEndAddress,
         windowId,
         blockIds: blocksByWindow.get(windowId),
-      });
-
-      const assignments = (assignmentsByWindow.get(windowId) ?? [])
-        .slice()
-        .sort((a, b) => a.address - b.address || a.size - b.size);
+      } satisfies HardwareBankSummary['layout']['spans'][number];
+      layoutSpans.push(windowLayoutSpan);
 
       let windowCursor = startOffset;
-      let currentSpan: HardwareBankSummary['blockLayout']['spans'][number] | null = null;
+    let currentSpan: HardwareBankSummary['blockLayout']['spans'][number] | null = null;
+      let windowLastKnownAddress = firstAssignment?.address;
 
       assignments.forEach((assignment) => {
         const spanSize = Math.max(assignment.size, 0);
@@ -326,12 +369,17 @@ const buildHardwareBankSummaries = (
 
         const spanStart = windowCursor;
         const spanEnd = spanStart + spanSize;
+        const spanStartAddress = assignment.address;
+        const spanEndAddress = assignment.address + spanSize;
 
         if (currentSpan && currentSpan.blockId === assignment.blockId) {
           currentSpan.sizeBytes += spanSize;
           currentSpan.endOffset = spanEnd;
           if (assignment.sectionId) {
             (currentSpan.sectionIds ??= []).push(assignment.sectionId);
+          }
+          if (spanEndAddress > (currentSpan.endAddress ?? Number.NEGATIVE_INFINITY)) {
+            currentSpan.endAddress = spanEndAddress;
           }
         } else {
           currentSpan = {
@@ -341,6 +389,8 @@ const buildHardwareBankSummaries = (
             sizeBytes: spanSize,
             startOffset: spanStart,
             endOffset: spanEnd,
+            startAddress: spanStartAddress,
+            endAddress: spanEndAddress,
             windowId,
             blockId: assignment.blockId,
             parentSpanId: windowSpanId,
@@ -351,6 +401,7 @@ const buildHardwareBankSummaries = (
         }
 
         windowCursor = spanEnd;
+        windowLastKnownAddress = spanEndAddress;
       });
 
       if (windowCursor < endOffset) {
@@ -362,15 +413,45 @@ const buildHardwareBankSummaries = (
           sizeBytes: paddingSize,
           startOffset: windowCursor,
           endOffset,
+          startAddress: (() => {
+            const derived = offsetToAddress(windowCursor);
+            if (derived !== undefined) {
+              return derived;
+            }
+            return windowLastKnownAddress;
+          })(),
+          endAddress: (() => {
+            const derivedStart = offsetToAddress(windowCursor);
+            if (derivedStart !== undefined) {
+              return derivedStart + paddingSize;
+            }
+            if (windowLastKnownAddress !== undefined) {
+              return windowLastKnownAddress + paddingSize;
+            }
+            return undefined;
+          })(),
           windowId,
           parentSpanId: windowSpanId,
         });
         blockSpanCounter += 1;
         windowCursor = endOffset;
+        const derivedEndAddress = offsetToAddress(endOffset);
+        if (derivedEndAddress !== undefined) {
+          windowLastKnownAddress = derivedEndAddress;
+        } else if (windowLastKnownAddress !== undefined) {
+          windowLastKnownAddress += paddingSize;
+        }
       }
 
       cursor = endOffset;
       currentSpan = null;
+      if (windowLastKnownAddress !== undefined) {
+        windowEndAddress = windowEndAddress === undefined ? windowLastKnownAddress : Math.max(windowEndAddress, windowLastKnownAddress);
+        windowLayoutSpan.endAddress = windowEndAddress;
+      }
+      if (windowLayoutSpan.endAddress !== undefined) {
+        lastWindowEndAddress = windowLayoutSpan.endAddress;
+      }
     });
 
     const occupiedTotal = cursor;
@@ -383,6 +464,8 @@ const buildHardwareBankSummaries = (
       const startOffset = cursor;
       const endOffset = startOffset + freeSpanBytes;
       const freeSpanId = `${bank.id}:free`;
+      const freeSpanStartAddress = lastWindowEndAddress;
+      const freeSpanEndAddress = freeSpanStartAddress !== undefined ? freeSpanStartAddress + freeSpanBytes : undefined;
 
       layoutSpans.push({
         id: freeSpanId,
@@ -391,6 +474,8 @@ const buildHardwareBankSummaries = (
         sizeBytes: freeSpanBytes,
         startOffset,
         endOffset,
+        startAddress: freeSpanStartAddress,
+        endAddress: freeSpanEndAddress,
       });
 
       blockLayoutSpans.push({
@@ -400,10 +485,13 @@ const buildHardwareBankSummaries = (
         sizeBytes: freeSpanBytes,
         startOffset,
         endOffset,
+        startAddress: freeSpanStartAddress,
+        endAddress: freeSpanEndAddress,
         parentSpanId: freeSpanId,
       });
       blockSpanCounter += 1;
       cursor = endOffset;
+      lastWindowEndAddress = freeSpanEndAddress;
     }
 
     let reservedCursor = cursor;
@@ -416,6 +504,18 @@ const buildHardwareBankSummaries = (
       const reservationEnd = reservationStart + reservation.sizeBytes;
       const reservationSpanId = `${bank.id}:${reservation.id ?? `reservation-${index}`}`;
 
+  const reservationWindowMeta = windowMetaById.get(reservation.windowId);
+  const anchor = windowAddressAnchors.get(reservation.windowId);
+      let reservationStartAddress: number | undefined;
+      if (anchor?.startAddress !== undefined) {
+        reservationStartAddress = anchor.startAddress + (reservationStart - anchor.startOffset);
+      } else if (reservationWindowMeta?.baseAddress !== undefined) {
+        reservationStartAddress = reservationWindowMeta.baseAddress + reservation.startOffset;
+      } else if (lastWindowEndAddress !== undefined) {
+        reservationStartAddress = lastWindowEndAddress;
+      }
+      const reservationEndAddress = reservationStartAddress !== undefined ? reservationStartAddress + reservation.sizeBytes : undefined;
+
       layoutSpans.push({
         id: reservationSpanId,
         label: reservation.label,
@@ -423,6 +523,8 @@ const buildHardwareBankSummaries = (
         sizeBytes: reservation.sizeBytes,
         startOffset: reservationStart,
         endOffset: reservationEnd,
+        startAddress: reservationStartAddress,
+        endAddress: reservationEndAddress,
         windowId: reservation.windowId,
         reservationId: reservation.id,
       });
@@ -434,6 +536,8 @@ const buildHardwareBankSummaries = (
         sizeBytes: reservation.sizeBytes,
         startOffset: reservationStart,
         endOffset: reservationEnd,
+        startAddress: reservationStartAddress,
+        endAddress: reservationEndAddress,
         windowId: reservation.windowId,
         reservationId: reservation.id,
         parentSpanId: reservationSpanId,
@@ -441,6 +545,9 @@ const buildHardwareBankSummaries = (
       blockSpanCounter += 1;
 
       reservedCursor = reservationEnd;
+      if (reservationEndAddress !== undefined) {
+        lastWindowEndAddress = reservationEndAddress;
+      }
     });
 
     layoutSpans.sort((a, b) => a.startOffset - b.startOffset);

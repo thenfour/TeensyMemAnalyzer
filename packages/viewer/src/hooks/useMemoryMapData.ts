@@ -15,6 +15,8 @@ export interface MemoryMapSpan {
     start: number;
     end: number;
     size: number;
+    startAddress?: number;
+    endAddress?: number;
     regionId?: string;
     regionName?: string;
     color: string;
@@ -100,6 +102,8 @@ export const useMemoryMapData = (
                     start: span.startOffset,
                     end: span.endOffset,
                     size: span.sizeBytes,
+                    startAddress: span.startAddress,
+                    endAddress: span.endAddress,
                     regionId: span.windowId,
                     regionName,
                     color,
@@ -142,6 +146,8 @@ export const useMemoryMapData = (
                     start: span.startOffset,
                     end: span.endOffset,
                     size: span.sizeBytes,
+                    startAddress: span.startAddress,
+                    endAddress: span.endAddress,
                     regionId: span.windowId,
                     regionName,
                     color,

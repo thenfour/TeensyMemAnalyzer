@@ -498,6 +498,11 @@ rect {
     color: #475569;
 }
 
+.memory-map-address-unknown {
+    color: #64748b;
+    font-style: italic;
+}
+
 .memory-map-legend {
     display: flex;
     flex-wrap: wrap;

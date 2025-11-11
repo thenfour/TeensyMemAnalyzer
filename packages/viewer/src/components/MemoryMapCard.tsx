@@ -290,6 +290,9 @@ const MemoryMapSpanDetails = ({ span }: { span: MemoryMapSpan | null }): JSX.Ele
         return <p className="memory-map-details-empty">Select a span to inspect its address range and size.</p>;
     }
 
+    const renderAddress = (value: number | undefined): JSX.Element =>
+        value !== undefined ? <AddressValue value={value} /> : <span className="memory-map-address-unknown">Unknown</span>;
+
     return (
         <dl className="memory-map-details-list">
             <div>
@@ -328,13 +331,13 @@ const MemoryMapSpanDetails = ({ span }: { span: MemoryMapSpan | null }): JSX.Ele
             <div>
                 <dt>Start</dt>
                 <dd>
-                    <AddressValue value={span.start} />
+                    {renderAddress(span.startAddress)}
                 </dd>
             </div>
             <div>
                 <dt>End</dt>
                 <dd>
-                    <AddressValue value={span.end} />
+                    {renderAddress(span.endAddress)}
                 </dd>
             </div>
             <div>

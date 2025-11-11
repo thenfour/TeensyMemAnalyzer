@@ -23,14 +23,21 @@ interface BlockUsage {
 const buildBlockUsageIndex = (analysis: Analysis): Map<string, BlockUsage> => {
   const index = new Map<string, BlockUsage>();
 
+  analysis.config.logicalBlocks.forEach((block) => {
+    index.set(block.id, {
+      total: 0,
+      runtime: 0,
+      load: 0,
+      tags: new Map<string, number>(),
+    });
+  });
+
   analysis.sections.forEach((section) => {
     section.blockAssignments.forEach((assignment) => {
-      const current = index.get(assignment.blockId) ?? {
-        total: 0,
-        runtime: 0,
-        load: 0,
-        tags: new Map<string, number>(),
-      };
+      const current = index.get(assignment.blockId);
+      if (!current) {
+        return;
+      }
 
       current.total += assignment.size;
       if (assignment.addressType === 'load') {
@@ -42,8 +49,6 @@ const buildBlockUsageIndex = (analysis: Analysis): Map<string, BlockUsage> => {
       assignment.reportTags.forEach((tag) => {
         current.tags.set(tag, (current.tags.get(tag) ?? 0) + assignment.size);
       });
-
-      index.set(assignment.blockId, current);
     });
   });
 

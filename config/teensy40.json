@@ -264,6 +264,12 @@
         },
         {
             "match": {
+                "equals": ".fini"
+            },
+            "categoryId": "flash_code"
+        },
+        {
+            "match": {
                 "equals": ".text.itcm"
             },
             "categoryId": "fastrun"

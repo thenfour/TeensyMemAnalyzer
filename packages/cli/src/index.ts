@@ -8,10 +8,22 @@ import {
   Analysis,
   SourceLocation,
   Symbol as AnalysisSymbol,
-  RegionSummary,
   calculateTeensySizeReport,
   resolveSymbolSource,
+  generateSummaries,
+  Summaries,
+  TeensySizeReportSummary,
 } from '@teensy-mem-explorer/analyzer';
+import {
+  printHeader,
+  printSummaryTotals,
+  printHardwareBanks,
+  printWindows,
+  printTagTotals,
+  printFileOnlySections,
+  PrintContext,
+  formatBytes,
+} from './formatters';
 
 interface CliOptions {
   targetId?: string;
@@ -96,8 +108,6 @@ const swapExtension = (filePath: string, nextExtension: string): string => {
   return path.join(directory, `${base}${nextExtension}`);
 };
 
-const formatBytes = (bytes: number): string => `${bytes} B`;
-
 type SymbolSourceLookup = (symbol: AnalysisSymbol) => Promise<SourceLocation | undefined>;
 
 interface SourceLookupOptions {
@@ -143,149 +153,72 @@ const formatSourceLocationSuffix = (location: SourceLocation | undefined): strin
   return `  [${normalizedPath}:${location.line}]`;
 };
 
-const computeTopSymbolsByRegion = (symbols: AnalysisSymbol[], limit: number): Map<string, AnalysisSymbol[]> => {
-  const grouped = new Map<string, AnalysisSymbol[]>();
+const selectTopSymbols = (symbols: AnalysisSymbol[], limit: number): AnalysisSymbol[] =>
+  [...symbols]
+    .filter((symbol) => symbol.size > 0)
+    .sort((a, b) => b.size - a.size || a.name.localeCompare(b.name))
+    .slice(0, limit);
 
-  symbols.forEach((symbol) => {
-    if (!symbol.regionId || symbol.size <= 0) {
-      return;
-    }
-
-    const list = grouped.get(symbol.regionId);
-    if (list) {
-      list.push(symbol);
-    } else {
-      grouped.set(symbol.regionId, [symbol]);
-    }
-  });
-
-  const result = new Map<string, AnalysisSymbol[]>();
-  grouped.forEach((list, regionId) => {
-    const sorted = [...list].sort((a, b) => b.size - a.size || a.name.localeCompare(b.name));
-    result.set(regionId, sorted.slice(0, limit));
-  });
-
-  return result;
-};
-
-const printRegionSummary = async (
-  regionSummary: RegionSummary,
-  analysis: Analysis,
-  topSymbols: AnalysisSymbol[],
-  lookupSource: SymbolSourceLookup,
-): Promise<void> => {
-  const region = analysis.regions.find((entry) => entry.id === regionSummary.regionId);
-  if (!region) {
+const printTeensySizeReport = (report: TeensySizeReportSummary | undefined): void => {
+  if (!report || Object.keys(report).length === 0) {
     return;
   }
 
-  console.log(`\nRegion ${region.name} (${region.id})`);
-  console.log(`  Size:            ${formatBytes(regionSummary.size)}`);
-  console.log(`  Reserved:        ${formatBytes(regionSummary.reserved)}`);
-  console.log(`  Used (static):   ${formatBytes(regionSummary.usedStatic)}`);
-  console.log(`  Free (dynamic):  ${formatBytes(regionSummary.freeForDynamic)}`);
+  console.log('\nTeensy-size fields:');
+  Object.entries(report).forEach(([name, entry]) => {
+    console.log(`  ${name}:`);
+    console.log(`    Capacity:   ${formatBytes(entry.capacityBytes)}`);
+    console.log(`    Raw used:   ${formatBytes(entry.rawUsedBytes)}`);
+    console.log(`    Adjusted:   ${formatBytes(entry.adjustedUsedBytes)}`);
+    console.log(`    Free:       ${formatBytes(entry.freeBytes)}`);
 
-  console.log('  By category:');
-  Object.entries(regionSummary.usedByCategory)
-    .filter(([, value]) => (value ?? 0) > 0)
-    .forEach(([category, value]) => {
-      console.log(`    ${category.padEnd(12)} ${formatBytes(value ?? 0)}`);
-    });
-
-  if (regionSummary.paddingBytes > 0 || regionSummary.largestGapBytes > 0) {
-    console.log('  Alignment padding:');
-    console.log(`    Total          ${formatBytes(regionSummary.paddingBytes)}`);
-    if (regionSummary.largestGapBytes > 0) {
-      console.log(`    Largest gap    ${formatBytes(regionSummary.largestGapBytes)}`);
+    if (entry.codeBytes !== undefined) {
+      console.log(`    Code bytes: ${formatBytes(entry.codeBytes)}`);
     }
+    if (entry.dataBytes !== undefined) {
+      console.log(`    Data bytes: ${formatBytes(entry.dataBytes)}`);
+    }
+    if (entry.blockBytes !== undefined) {
+      console.log(`    Block bytes:${formatBytes(entry.blockBytes)}`);
+    }
+
+    const bucketEntries = Object.entries(entry.bucketTotals ?? {});
+    if (bucketEntries.length > 0) {
+      console.log('    Buckets:');
+      bucketEntries.forEach(([bucket, bytes]) => {
+        console.log(`      ${bucket}: ${formatBytes(bytes)}`);
+      });
+    }
+  });
+};
+
+const printTopSymbols = async (context: PrintContext): Promise<void> => {
+  const topSymbols = selectTopSymbols(context.analysis.symbols, 10);
+  if (topSymbols.length === 0) {
+    return;
   }
 
-  if (topSymbols.length > 0) {
-    console.log('  Worst offenders:');
-    const locations = await Promise.all(topSymbols.map((symbol) => lookupSource(symbol)));
-    topSymbols.forEach((symbol, index) => {
-      const rankLabel = `${index + 1}.`;
-      const locationSuffix = formatSourceLocationSuffix(locations[index]);
-      console.log(
-        `    ${rankLabel.padEnd(4)}${formatBytes(symbol.size).padStart(10)}  ${symbol.name}${locationSuffix}`,
-      );
-    });
+  console.log('\nTop symbols (window/block):');
+  for (const symbol of topSymbols) {
+    const location = await context.lookupSymbolSource(symbol);
+    const locationSuffix = formatSourceLocationSuffix(location);
+    const windowLabel = symbol.windowId ?? 'unknown-window';
+    const blockLabel = symbol.blockId ? `/${symbol.blockId}` : '';
+    console.log(
+      `  ${formatBytes(symbol.size).padStart(10)}  ${symbol.name}  (${windowLabel}${blockLabel})${locationSuffix}`,
+    );
   }
 };
 
-const printAnalysis = async (
-  analysis: Analysis,
-  lookupSource: SymbolSourceLookup,
-): Promise<void> => {
-  console.log(`Target: ${analysis.target.name}`);
-  console.log(`ELF:    ${analysis.build.elfPath}`);
-  if (analysis.build.mapPath) {
-    console.log(`MAP:    ${analysis.build.mapPath}`);
-  }
-
-  console.log('\nTotals:');
-  console.log(`  Flash used:          ${formatBytes(analysis.summaries.totals.flashUsed)}`);
-  console.log(`    - Code:            ${formatBytes(analysis.summaries.totals.flashCode)}`);
-  console.log(`    - Const:           ${formatBytes(analysis.summaries.totals.flashConst)}`);
-  console.log(`    - Init images:     ${formatBytes(analysis.summaries.totals.flashInitImages)}`);
-  console.log(`  RAM used:            ${formatBytes(analysis.summaries.totals.ramUsed)}`);
-  console.log(`    - Code:            ${formatBytes(analysis.summaries.totals.ramCode)}`);
-  console.log(`    - Data init:       ${formatBytes(analysis.summaries.totals.ramDataInit)}`);
-  console.log(`    - BSS:             ${formatBytes(analysis.summaries.totals.ramBss)}`);
-  console.log(`    - DMA:             ${formatBytes(analysis.summaries.totals.ramDma)}`);
-
-  if (analysis.summaries.fileOnly.totalBytes > 0) {
-    console.log(`  File-only (non-alloc): ${formatBytes(analysis.summaries.fileOnly.totalBytes)}`);
-  }
-
-  const teensySizeSummary = calculateTeensySizeReport(analysis);
-  if (teensySizeSummary.flash || teensySizeSummary.ram1 || teensySizeSummary.ram2) {
-    console.log('\nTeensy-size fields:');
-    if (teensySizeSummary.flash) {
-      const flash = teensySizeSummary.flash;
-      console.log(
-        `  FLASH: code ${formatBytes(flash.code)}, data ${formatBytes(flash.data)}, headers ${formatBytes(
-          flash.headers,
-        )}  free for files: ${formatBytes(flash.freeForFiles)}`,
-      );
-    }
-
-    if (teensySizeSummary.ram1) {
-      const ram1 = teensySizeSummary.ram1;
-      console.log(
-        `  RAM1: variables ${formatBytes(ram1.variables)}, code ${formatBytes(ram1.code)}, padding ${formatBytes(
-          ram1.padding,
-        )}  free for local variables: ${formatBytes(ram1.freeForLocalVariables)}`,
-      );
-    }
-
-    if (teensySizeSummary.ram2) {
-      const ram2 = teensySizeSummary.ram2;
-      console.log(
-        `  RAM2: variables ${formatBytes(ram2.variables)}  free for malloc/new: ${formatBytes(ram2.freeForMalloc)}`,
-      );
-    }
-  }
-
-  const topSymbolsByRegion = computeTopSymbolsByRegion(analysis.symbols, 3);
-
-  for (const regionSummary of analysis.summaries.byRegion) {
-    const offenders = topSymbolsByRegion.get(regionSummary.regionId) ?? [];
-    await printRegionSummary(regionSummary, analysis, offenders, lookupSource);
-  }
-
-  console.log('\nTop symbols (region id) by size:');
-  const topSymbols = [...analysis.symbols]
-    .filter((symbol) => symbol.size > 0)
-    .sort((a, b) => b.size - a.size)
-    .slice(0, 10);
-
-  for (const symbol of topSymbols) {
-    const locationSuffix = formatSourceLocationSuffix(await lookupSource(symbol));
-    console.log(
-      `  ${formatBytes(symbol.size).padStart(10)}  ${symbol.name}  (${symbol.regionId ?? 'unknown'})${locationSuffix}`,
-    );
-  }
+const printAnalysis = async (context: PrintContext): Promise<void> => {
+  printHeader(context);
+  printSummaryTotals(context);
+  printHardwareBanks(context);
+  printWindows(context);
+  printTagTotals(context);
+  printFileOnlySections(context);
+  printTeensySizeReport(context.report);
+  await printTopSymbols(context);
 };
 
 const main = async (): Promise<void> => {
@@ -330,6 +263,8 @@ const main = async (): Promise<void> => {
     };
 
     const analysis = await analyzeBuild(params);
+    const summaries = generateSummaries(analysis);
+    const report = calculateTeensySizeReport(analysis, { summaries });
 
     const lookupSource = createSymbolSourceLookup(analysis, {
       toolchainDir,
@@ -337,9 +272,15 @@ const main = async (): Promise<void> => {
     });
 
     if (outputFormat === 'json') {
-      console.log(JSON.stringify(analysis, null, 2));
+      console.log(JSON.stringify({ analysis, summaries, report }, null, 2));
     } else {
-      await printAnalysis(analysis, lookupSource);
+      const context: PrintContext = {
+        analysis,
+        summaries,
+        report,
+        lookupSymbolSource: lookupSource,
+      };
+      await printAnalysis(context);
     }
   } catch (error) {
     console.error(`Error: ${(error as Error).message}`);

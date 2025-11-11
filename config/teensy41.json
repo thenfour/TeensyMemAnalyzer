@@ -337,6 +337,18 @@
         },
         {
             "match": {
+                "prefix": ".bss.dma"
+            },
+            "categoryId": "ocram_bss"
+        },
+        {
+            "match": {
+                "prefix": ".dmabuffers"
+            },
+            "categoryId": "ocram_bss"
+        },
+        {
+            "match": {
                 "prefix": ".bss"
             },
             "categoryId": "dtcm_bss"

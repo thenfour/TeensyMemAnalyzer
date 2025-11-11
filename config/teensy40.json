@@ -24,7 +24,7 @@
         {
             "id": "flash",
             "name": "QSPI Flash",
-            "capacityBytes": 8388608,
+            "capacityBytes": 2031616,
             "windowIds": [
                 "FLASH"
             ]
@@ -52,7 +52,7 @@
             "id": "ram2",
             "name": "RAM2",
             "description": "On-chip AXI RAM shared with DMA and large allocations.",
-            "capacityBytes": 262144,
+            "capacityBytes": 524288,
             "windowIds": [
                 "OCRAM"
             ]
@@ -309,6 +309,18 @@
                 "equals": ".fini_array"
             },
             "categoryId": "dtcm_data_init"
+        },
+        {
+            "match": {
+                "prefix": ".bss.dma"
+            },
+            "categoryId": "ocram_bss"
+        },
+        {
+            "match": {
+                "prefix": ".dmabuffers"
+            },
+            "categoryId": "ocram_bss"
         },
         {
             "match": {

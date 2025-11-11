@@ -159,37 +159,55 @@ const selectTopSymbols = (symbols: AnalysisSymbol[], limit: number): AnalysisSym
     .sort((a, b) => b.size - a.size || a.name.localeCompare(b.name))
     .slice(0, limit);
 
-const printTeensySizeReport = (report: TeensySizeReportSummary | undefined): void => {
+const formatReportNumber = (value: number | undefined): string => (value ?? 0).toString();
+
+const getBucketValue = (entry: NonNullable<TeensySizeReportSummary[string]>, bucket: string): number =>
+  entry.bucketTotals?.[bucket] ?? 0;
+
+const sumBucketValues = (entry: NonNullable<TeensySizeReportSummary[string]>, buckets: string[]): number =>
+  buckets.reduce((total, bucket) => total + getBucketValue(entry, bucket), 0);
+
+const printTeensySizeReport = (context: PrintContext): void => {
+  const report = context.report;
   if (!report || Object.keys(report).length === 0) {
     return;
   }
 
-  console.log('\nTeensy-size fields:');
-  Object.entries(report).forEach(([name, entry]) => {
-    console.log(`  ${name}:`);
-    console.log(`    Capacity:   ${formatBytes(entry.capacityBytes)}`);
-    console.log(`    Raw used:   ${formatBytes(entry.rawUsedBytes)}`);
-    console.log(`    Adjusted:   ${formatBytes(entry.adjustedUsedBytes)}`);
-    console.log(`    Free:       ${formatBytes(entry.freeBytes)}`);
+  console.log(`\nteensy_size: Memory Usage on ${context.analysis.target.name}:`);
 
-    if (entry.codeBytes !== undefined) {
-      console.log(`    Code bytes: ${formatBytes(entry.codeBytes)}`);
-    }
-    if (entry.dataBytes !== undefined) {
-      console.log(`    Data bytes: ${formatBytes(entry.dataBytes)}`);
-    }
-    if (entry.blockBytes !== undefined) {
-      console.log(`    Block bytes:${formatBytes(entry.blockBytes)}`);
-    }
+  const flash = report.flash;
+  if (flash) {
+    const flashCode = getBucketValue(flash, 'code');
+    const flashData = getBucketValue(flash, 'data');
+    const flashHeaders = getBucketValue(flash, 'headers');
+    console.log(
+      `teensy_size:   FLASH: code:${formatReportNumber(flashCode)}, data:${formatReportNumber(
+        flashData,
+      )}, headers:${formatReportNumber(flashHeaders)}   free for files:${formatReportNumber(flash.freeBytes)}`,
+    );
+  }
 
-    const bucketEntries = Object.entries(entry.bucketTotals ?? {});
-    if (bucketEntries.length > 0) {
-      console.log('    Buckets:');
-      bucketEntries.forEach(([bucket, bytes]) => {
-        console.log(`      ${bucket}: ${formatBytes(bytes)}`);
-      });
-    }
-  });
+  const ram1 = report.ram1;
+  if (ram1) {
+    const variables = sumBucketValues(ram1, ['data', 'bss', 'noinit']);
+    const codeBytes = ram1.codeBytes ?? getBucketValue(ram1, 'code');
+    const padding = Math.max(ram1.adjustedUsedBytes - ram1.rawUsedBytes, 0);
+    console.log(
+      `teensy_size:    RAM1: variables:${formatReportNumber(variables)}, code:${formatReportNumber(
+        codeBytes,
+      )}, padding:${formatReportNumber(padding)}   free for local variables:${formatReportNumber(ram1.freeBytes)}`,
+    );
+  }
+
+  const ram2 = report.ram2;
+  if (ram2) {
+    const variables = sumBucketValues(ram2, ['data', 'bss', 'noinit']);
+    console.log(
+      `teensy_size:    RAM2: variables:${formatReportNumber(variables)}  free for malloc/new:${formatReportNumber(
+        ram2.freeBytes,
+      )}`,
+    );
+  }
 };
 
 const printTopSymbols = async (context: PrintContext): Promise<void> => {
@@ -217,7 +235,7 @@ const printAnalysis = async (context: PrintContext): Promise<void> => {
   printWindows(context);
   printTagTotals(context);
   printFileOnlySections(context);
-  printTeensySizeReport(context.report);
+  printTeensySizeReport(context);
   await printTopSymbols(context);
 };
 

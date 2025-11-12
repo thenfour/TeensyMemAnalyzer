@@ -74,6 +74,7 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
     '--size-sort',
     '--numeric-sort',
     '--demangle',
+    '--line-numbers',
     analysis.build.elfPath,
   ]);
   if (nmResult.exitCode !== 0) {

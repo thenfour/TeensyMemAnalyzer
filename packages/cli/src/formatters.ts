@@ -1,10 +1,4 @@
-import {
-  Analysis,
-  SourceLocation,
-  Summaries,
-  Symbol,
-  TeensySizeReportSummary,
-} from '@teensy-mem-explorer/analyzer';
+import { Analysis, Summaries, TeensySizeReportSummary } from '@teensy-mem-explorer/analyzer';
 
 export const formatBytes = (bytes: number): string => `${bytes} B`;
 
@@ -19,7 +13,6 @@ export interface PrintContext {
   analysis: Analysis;
   summaries: Summaries;
   report?: TeensySizeReportSummary;
-  lookupSymbolSource: (symbol: Symbol) => Promise<SourceLocation | undefined>;
 }
 
 export const printHeader = (context: PrintContext): void => {

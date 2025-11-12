@@ -96,7 +96,7 @@ For future agent-driven edits (human or AI), keep these guardrails in mind:
 ## Quick Start
 1. **Install prerequisites**
    - Node.js 18+ and Yarn 1.x.
-   - Optionally, a local `arm-none-eabi-*` toolchain if you want source/addr2line lookups (pass its location via `--toolchain-dir`).
+  - Optionally, a local `arm-none-eabi-*` toolchain to provide `nm`, `objdump`, and `readelf` (pass its location via `--toolchain-dir`).
 2. **Build once**
    ```powershell
    yarn install

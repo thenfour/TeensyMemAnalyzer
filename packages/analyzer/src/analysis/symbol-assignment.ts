@@ -101,6 +101,7 @@ export const assignSymbolsToSections = (
       isWeak: isWeak(symbolInfo.typeCode) || undefined,
       isStatic: isStatic(symbolInfo.typeCode) || undefined,
       isTls: undefined,
+      source: symbolInfo.source,
       primaryLocation,
       locations: locations.length > 0 ? locations : undefined,
     };
@@ -136,6 +137,10 @@ export const assignSymbolsToSections = (
 
     if (symbol.primaryLocation && !existing.primaryLocation) {
       existing.primaryLocation = symbol.primaryLocation;
+    }
+
+    if (!existing.source && symbol.source) {
+      existing.source = symbol.source;
     }
 
     if (symbol.locations && symbol.locations.length > 0) {

@@ -5,11 +5,8 @@ import path from 'path';
 import {
   analyzeBuild,
   AnalyzeBuildParams,
-  Analysis,
-  SourceLocation,
   Symbol as AnalysisSymbol,
   calculateTeensySizeReport,
-  resolveSymbolSource,
   generateSummaries,
   Summaries,
   TeensySizeReportSummary,
@@ -108,39 +105,7 @@ const swapExtension = (filePath: string, nextExtension: string): string => {
   return path.join(directory, `${base}${nextExtension}`);
 };
 
-type SymbolSourceLookup = (symbol: AnalysisSymbol) => Promise<SourceLocation | undefined>;
-
-interface SourceLookupOptions {
-  toolchainDir?: string;
-  toolchainPrefix?: string;
-}
-
-const createSymbolSourceLookup = (analysis: Analysis, options: SourceLookupOptions): SymbolSourceLookup => {
-  const cache = new Map<string, Promise<SourceLocation | undefined>>();
-
-  return async (symbol: AnalysisSymbol): Promise<SourceLocation | undefined> => {
-    if (symbol.source) {
-      return symbol.source;
-    }
-
-    const cached = cache.get(symbol.id);
-    if (cached) {
-      return cached;
-    }
-
-    const lookupPromise = resolveSymbolSource({
-      analysis,
-      symbol,
-      toolchainDir: options.toolchainDir,
-      toolchainPrefix: options.toolchainPrefix,
-    }).catch(() => undefined);
-
-    cache.set(symbol.id, lookupPromise);
-    return lookupPromise;
-  };
-};
-
-const formatSourceLocationSuffix = (location: SourceLocation | undefined): string => {
+const formatSourceLocationSuffix = (location: AnalysisSymbol['source']): string => {
   if (!location) {
     return '';
   }
@@ -210,7 +175,7 @@ const printTeensySizeReport = (context: PrintContext): void => {
   }
 };
 
-const printTopSymbols = async (context: PrintContext): Promise<void> => {
+const printTopSymbols = (context: PrintContext): void => {
   const topSymbols = selectTopSymbols(context.analysis.symbols, 10);
   if (topSymbols.length === 0) {
     return;
@@ -229,7 +194,7 @@ const printTopSymbols = async (context: PrintContext): Promise<void> => {
       }>;
     };
 
-    const location = await context.lookupSymbolSource(symbol);
+    const location = symbol.source;
     const locationSuffix = formatSourceLocationSuffix(location);
     const primaryLocation = extendedSymbol.primaryLocation ?? extendedSymbol.locations?.[0];
     const windowLabel = primaryLocation?.windowId ?? symbol.windowId ?? 'unknown-window';
@@ -241,7 +206,7 @@ const printTopSymbols = async (context: PrintContext): Promise<void> => {
   }
 };
 
-const printAnalysis = async (context: PrintContext): Promise<void> => {
+const printAnalysis = (context: PrintContext): void => {
   printHeader(context);
   printSummaryTotals(context);
   printHardwareBanks(context);
@@ -249,7 +214,7 @@ const printAnalysis = async (context: PrintContext): Promise<void> => {
   printTagTotals(context);
   printFileOnlySections(context);
   printTeensySizeReport(context);
-  await printTopSymbols(context);
+  printTopSymbols(context);
 };
 
 const main = async (): Promise<void> => {
@@ -297,11 +262,6 @@ const main = async (): Promise<void> => {
     const summaries = generateSummaries(analysis);
     const report = calculateTeensySizeReport(analysis, { summaries });
 
-    const lookupSource = createSymbolSourceLookup(analysis, {
-      toolchainDir,
-      toolchainPrefix,
-    });
-
     if (outputFormat === 'json') {
       console.log(JSON.stringify({ analysis, summaries, report }, null, 2));
     } else {
@@ -309,9 +269,8 @@ const main = async (): Promise<void> => {
         analysis,
         summaries,
         report,
-        lookupSymbolSource: lookupSource,
       };
-      await printAnalysis(context);
+      printAnalysis(context);
     }
   } catch (error) {
     console.error(`Error: ${(error as Error).message}`);

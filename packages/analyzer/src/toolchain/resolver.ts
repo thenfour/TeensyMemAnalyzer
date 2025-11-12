@@ -7,14 +7,13 @@ export interface ToolchainCommands {
   nm: string;
   objdump: string;
   size: string;
-  addr2line: string;
   readelf: string;
   strings: string;
 }
 
 const DEFAULT_PREFIX = 'arm-none-eabi-';
 
-const candidateCommands = ['nm', 'objdump', 'size', 'addr2line', 'readelf', 'strings'] as const;
+const candidateCommands = ['nm', 'objdump', 'size', 'readelf', 'strings'] as const;
 
 const fileExists = async (filePath: string): Promise<boolean> => {
   try {

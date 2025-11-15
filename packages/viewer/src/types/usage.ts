@@ -1,3 +1,5 @@
+import type { AddressUsageKind } from '@teensy-mem-explorer/analyzer';
+
 export type RangeBounds = {
     start: number;
     end: number;
@@ -10,6 +12,7 @@ export type AddressRangeMeta = {
     regionName?: string;
     regionKind?: string;
     regionKindLabel?: string;
+    addressType?: AddressUsageKind;
 };
 
 export type UsageBarData = {

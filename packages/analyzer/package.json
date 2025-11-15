@@ -15,6 +15,11 @@
             "types": "./dist/analysis/reports/teensy-size.d.ts",
             "require": "./dist/analysis/reports/teensy-size.js",
             "import": "./dist/analysis/reports/teensy-size.js"
+        },
+        "./analysis/address-resolver": {
+            "types": "./dist/analysis/address-resolver.d.ts",
+            "require": "./dist/analysis/address-resolver.js",
+            "import": "./dist/analysis/address-resolver.js"
         }
     },
     "scripts": {

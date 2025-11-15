@@ -19,6 +19,7 @@ import MemoryMapCard from './components/MemoryMapCard';
 import TreemapCard from './components/TreemapCard';
 import RuntimeBankCard from './components/RuntimeBankCard';
 import { useRegionUsage } from './hooks/useRegionUsage';
+import { AddressResolutionProvider } from './context/AddressResolverContext';
 
 type LatestAnalysisBundle = {
     analysis: Analysis;
@@ -464,194 +465,196 @@ const App = (): JSX.Element => {
     );
 
     return (
-        <div className="app-root" style={appRootStyle}>
-            <header>
-                <h1>Teensy Memory Explorer Viewer</h1>
-                <p>Select an analyzer JSON output file to explore memory usage visually.</p>
-            </header>
-            <main>
-                <section className="status-card">
-                    <h2>Companion Service</h2>
-                    <dl>
-                        <div>
-                            <dt>Connection</dt>
-                            <dd className={`chip chip--${connectionState}`}>{connectionState}</dd>
-                        </div>
-                        <div>
-                            <dt>Status</dt>
-                            <dd>{statusLabel}</dd>
-                        </div>
-                        {latestAnalysis ? (
+        <AddressResolutionProvider analysis={latestAnalysis}>
+            <div className="app-root" style={appRootStyle}>
+                <header>
+                    <h1>Teensy Memory Explorer Viewer</h1>
+                    <p>Select an analyzer JSON output file to explore memory usage visually.</p>
+                </header>
+                <main>
+                    <section className="status-card">
+                        <h2>Companion Service</h2>
+                        <dl>
                             <div>
-                                <dt>Target</dt>
-                                <dd>{latestAnalysis.target.name}</dd>
+                                <dt>Connection</dt>
+                                <dd className={`chip chip--${connectionState}`}>{connectionState}</dd>
                             </div>
-                        ) : null}
-                        {serverStatus?.lastRunCompletedAt ? (
                             <div>
-                                <dt>Last analysis</dt>
-                                <dd>{new Date(serverStatus.lastRunCompletedAt).toLocaleString()}</dd>
+                                <dt>Status</dt>
+                                <dd>{statusLabel}</dd>
                             </div>
-                        ) : null}
-                        {analysisTotals ? (
-                            <>
+                            {latestAnalysis ? (
                                 <div>
-                                    <dt>Runtime bytes</dt>
-                                    <dd>
-                                        <SizeValue value={analysisTotals.runtimeBytes} />
-                                    </dd>
+                                    <dt>Target</dt>
+                                    <dd>{latestAnalysis.target.name}</dd>
                                 </div>
+                            ) : null}
+                            {serverStatus?.lastRunCompletedAt ? (
                                 <div>
-                                    <dt>Load image bytes</dt>
-                                    <dd>
-                                        <SizeValue value={analysisTotals.loadImageBytes} />
-                                    </dd>
+                                    <dt>Last analysis</dt>
+                                    <dd>{new Date(serverStatus.lastRunCompletedAt).toLocaleString()}</dd>
                                 </div>
+                            ) : null}
+                            {analysisTotals ? (
+                                <>
+                                    <div>
+                                        <dt>Runtime bytes</dt>
+                                        <dd>
+                                            <SizeValue value={analysisTotals.runtimeBytes} />
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt>Load image bytes</dt>
+                                        <dd>
+                                            <SizeValue value={analysisTotals.loadImageBytes} />
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt>File-only bytes</dt>
+                                        <dd>
+                                            <SizeValue value={analysisTotals.fileOnlyBytes} />
+                                        </dd>
+                                    </div>
+                                </>
+                            ) : null}
+                            {health?.version ? (
                                 <div>
-                                    <dt>File-only bytes</dt>
-                                    <dd>
-                                        <SizeValue value={analysisTotals.fileOnlyBytes} />
-                                    </dd>
+                                    <dt>Server version</dt>
+                                    <dd>{health.version}</dd>
                                 </div>
-                            </>
-                        ) : null}
-                        {health?.version ? (
-                            <div>
-                                <dt>Server version</dt>
-                                <dd>{health.version}</dd>
-                            </div>
-                        ) : null}
-                        {connectionError ? <div className="status-warning">{connectionError}</div> : null}
-                    </dl>
+                            ) : null}
+                            {connectionError ? <div className="status-warning">{connectionError}</div> : null}
+                        </dl>
 
-                    <div className="status-actions">
-                        <button type="button" onClick={handleManualRun} disabled={isRunDisabled}>
-                            {isTriggeringRun || serverStatus?.state === 'running' ? 'Running…' : 'Run Analysis'}
-                        </button>
-                        {!configReady ? (
-                            <span className="status-hint">Set target ID and ELF path to enable analysis.</span>
-                        ) : null}
-                        {configReady && !(pendingConfig.autoRun ?? false) ? (
-                            <span className="status-hint">Auto-run is off. Use this button after builds.</span>
-                        ) : null}
-                    </div>
-
-                    {(runError || serverStatus?.errorMessage) && (
-                        <div className="status-error">{runError ?? serverStatus?.errorMessage}</div>
-                    )}
-                </section>
-
-                <section className="config-card">
-                    <h2>Watch Configuration</h2>
-                    <form onSubmit={handleConfigSubmit} className="config-form">
-                        <div className="config-grid">
-                            <label>
-                                <span>Target ID</span>
-                                <input
-                                    type="text"
-                                    placeholder="teensy40"
-                                    value={pendingConfig.targetId ?? ''}
-                                    onChange={(event) => handleConfigInputChange('targetId', event.target.value)}
-                                />
-                            </label>
-                            <label>
-                                <span>ELF Path</span>
-                                <input
-                                    type="text"
-                                    placeholder="C:\\path\\to\\firmware.elf"
-                                    value={pendingConfig.elfPath ?? ''}
-                                    onChange={(event) => handleConfigInputChange('elfPath', event.target.value)}
-                                />
-                            </label>
-                            <label>
-                                <span>MAP Path</span>
-                                <input
-                                    type="text"
-                                    placeholder="C:\\path\\to\\firmware.map"
-                                    value={pendingConfig.mapPath ?? ''}
-                                    onChange={(event) => handleConfigInputChange('mapPath', event.target.value)}
-                                />
-                            </label>
-                            <label>
-                                <span>Toolchain Directory</span>
-                                <input
-                                    type="text"
-                                    placeholder="C:\\.platformio\\toolchain\\bin"
-                                    value={pendingConfig.toolchainDir ?? ''}
-                                    onChange={(event) => handleConfigInputChange('toolchainDir', event.target.value)}
-                                />
-                            </label>
-                            <label>
-                                <span>Toolchain Prefix</span>
-                                <input
-                                    type="text"
-                                    placeholder="arm-none-eabi-"
-                                    value={pendingConfig.toolchainPrefix ?? ''}
-                                    onChange={(event) => handleConfigInputChange('toolchainPrefix', event.target.value)}
-                                />
-                            </label>
-                            <label>
-                                <span>Debounce (ms)</span>
-                                <input
-                                    type="number"
-                                    min={250}
-                                    step={250}
-                                    value={pendingConfig.debounceMs ?? 1500}
-                                    onChange={(event) =>
-                                        handleConfigInputChange('debounceMs', Number.parseInt(event.target.value, 10))
-                                    }
-                                />
-                            </label>
-                        </div>
-
-                        <label className="toggle">
-                            <input
-                                type="checkbox"
-                                checked={pendingConfig.autoRun ?? false}
-                                onChange={(event) => handleConfigInputChange('autoRun', event.target.checked)}
-                            />
-                            <span>Automatically run analysis when files change</span>
-                        </label>
-
-                        {configError ? <p className="config-error">{configError}</p> : null}
-
-                        <div className="config-actions">
-                            <button type="submit" disabled={isSavingConfig}>
-                                {isSavingConfig ? 'Saving…' : 'Save Configuration'}
+                        <div className="status-actions">
+                            <button type="button" onClick={handleManualRun} disabled={isRunDisabled}>
+                                {isTriggeringRun || serverStatus?.state === 'running' ? 'Running…' : 'Run Analysis'}
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => setPendingConfig(config)}
-                                disabled={isSavingConfig}
-                                className="secondary"
-                            >
-                                Reset
-                            </button>
+                            {!configReady ? (
+                                <span className="status-hint">Set target ID and ELF path to enable analysis.</span>
+                            ) : null}
+                            {configReady && !(pendingConfig.autoRun ?? false) ? (
+                                <span className="status-hint">Auto-run is off. Use this button after builds.</span>
+                            ) : null}
                         </div>
-                    </form>
-                </section>
 
-                <label className="uploader">
-                    <span>Load analysis JSON:</span>
-                    <input type="file" accept="application/json" onChange={handleFileChange} />
-                </label>
-                {renderAnalysisSummary()}
+                        {(runError || serverStatus?.errorMessage) && (
+                            <div className="status-error">{runError ?? serverStatus?.errorMessage}</div>
+                        )}
+                    </section>
 
-                <TeensySizeCard hasAnalysis={Boolean(latestAnalysis)} error={teensySizeError} panels={teensySizePanels} />
+                    <section className="config-card">
+                        <h2>Watch Configuration</h2>
+                        <form onSubmit={handleConfigSubmit} className="config-form">
+                            <div className="config-grid">
+                                <label>
+                                    <span>Target ID</span>
+                                    <input
+                                        type="text"
+                                        placeholder="teensy40"
+                                        value={pendingConfig.targetId ?? ''}
+                                        onChange={(event) => handleConfigInputChange('targetId', event.target.value)}
+                                    />
+                                </label>
+                                <label>
+                                    <span>ELF Path</span>
+                                    <input
+                                        type="text"
+                                        placeholder="C:\\path\\to\\firmware.elf"
+                                        value={pendingConfig.elfPath ?? ''}
+                                        onChange={(event) => handleConfigInputChange('elfPath', event.target.value)}
+                                    />
+                                </label>
+                                <label>
+                                    <span>MAP Path</span>
+                                    <input
+                                        type="text"
+                                        placeholder="C:\\path\\to\\firmware.map"
+                                        value={pendingConfig.mapPath ?? ''}
+                                        onChange={(event) => handleConfigInputChange('mapPath', event.target.value)}
+                                    />
+                                </label>
+                                <label>
+                                    <span>Toolchain Directory</span>
+                                    <input
+                                        type="text"
+                                        placeholder="C:\\.platformio\\toolchain\\bin"
+                                        value={pendingConfig.toolchainDir ?? ''}
+                                        onChange={(event) => handleConfigInputChange('toolchainDir', event.target.value)}
+                                    />
+                                </label>
+                                <label>
+                                    <span>Toolchain Prefix</span>
+                                    <input
+                                        type="text"
+                                        placeholder="arm-none-eabi-"
+                                        value={pendingConfig.toolchainPrefix ?? ''}
+                                        onChange={(event) => handleConfigInputChange('toolchainPrefix', event.target.value)}
+                                    />
+                                </label>
+                                <label>
+                                    <span>Debounce (ms)</span>
+                                    <input
+                                        type="number"
+                                        min={250}
+                                        step={250}
+                                        value={pendingConfig.debounceMs ?? 1500}
+                                        onChange={(event) =>
+                                            handleConfigInputChange('debounceMs', Number.parseInt(event.target.value, 10))
+                                        }
+                                    />
+                                </label>
+                            </div>
 
-                <RuntimeBankCard usage={runtimeBankUsage} lastRunCompletedAt={lastRunCompletedAt} />
+                            <label className="toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={pendingConfig.autoRun ?? false}
+                                    onChange={(event) => handleConfigInputChange('autoRun', event.target.checked)}
+                                />
+                                <span>Automatically run analysis when files change</span>
+                            </label>
 
-                <RegionUsageCard regionUsage={regionUsage} lastRunCompletedAt={lastRunCompletedAt} />
+                            {configError ? <p className="config-error">{configError}</p> : null}
 
-                <MemoryMapCard
-                    analysis={latestAnalysis}
-                    summaries={latestSummaries}
-                    lastRunCompletedAt={lastRunCompletedAt}
-                />
-                <TreemapCard />
-                <section className="placeholder-grid" />
-            </main>
-        </div>
+                            <div className="config-actions">
+                                <button type="submit" disabled={isSavingConfig}>
+                                    {isSavingConfig ? 'Saving…' : 'Save Configuration'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPendingConfig(config)}
+                                    disabled={isSavingConfig}
+                                    className="secondary"
+                                >
+                                    Reset
+                                </button>
+                            </div>
+                        </form>
+                    </section>
+
+                    <label className="uploader">
+                        <span>Load analysis JSON:</span>
+                        <input type="file" accept="application/json" onChange={handleFileChange} />
+                    </label>
+                    {renderAnalysisSummary()}
+
+                    <TeensySizeCard hasAnalysis={Boolean(latestAnalysis)} error={teensySizeError} panels={teensySizePanels} />
+
+                    <RuntimeBankCard usage={runtimeBankUsage} lastRunCompletedAt={lastRunCompletedAt} />
+
+                    <RegionUsageCard regionUsage={regionUsage} lastRunCompletedAt={lastRunCompletedAt} />
+
+                    <MemoryMapCard
+                        analysis={latestAnalysis}
+                        summaries={latestSummaries}
+                        lastRunCompletedAt={lastRunCompletedAt}
+                    />
+                    <TreemapCard />
+                    <section className="placeholder-grid" />
+                </main>
+            </div>
+        </AddressResolutionProvider>
     );
 };
 

@@ -119,6 +119,7 @@ const buildWindowUsage = (
                           regionName: config?.name,
                           regionKind: 'window',
                           regionKindLabel: 'Address Window',
+                          addressType: 'runtime',
                       }
                     : undefined,
         } satisfies UsageBarData;

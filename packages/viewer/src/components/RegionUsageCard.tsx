@@ -19,6 +19,7 @@ const RegionUsageCard = ({ regionUsage, lastRunCompletedAt }: RegionUsageCardPro
                 regionName: meta.regionName,
                 regionKind: meta.regionKind,
                 regionKindLabel: meta.regionKindLabel,
+                addressType: meta.addressType,
             };
 
             return (

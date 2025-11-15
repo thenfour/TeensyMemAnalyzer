@@ -1,4 +1,6 @@
 import { createContext, useCallback, useContext, useMemo, useState, type PropsWithChildren } from 'react';
+import type { AddressUsageKind } from '@teensy-mem-explorer/analyzer';
+import { useAddressResolution } from '../context/AddressResolverContext';
 import Tooltip from './Tooltip';
 
 export type AddressDisplayFormat = 'hex' | 'decimal';
@@ -20,6 +22,12 @@ const FORMAT_SEQUENCE: AddressDisplayFormat[] = ['hex', 'decimal'];
 const FORMATTERS: Record<AddressDisplayFormat, (value: number) => string> = {
     hex: formatHex,
     decimal: formatDecimal,
+};
+
+const ADDRESS_TYPE_LABELS: Record<AddressUsageKind, string> = {
+    runtime: 'Runtime',
+    exec: 'Executable',
+    load: 'Load Image',
 };
 
 export const AddressFormatProvider = ({ children }: PropsWithChildren<unknown>): JSX.Element => {
@@ -71,6 +79,7 @@ export interface AddressMetadata {
     regionId?: string;
     regionKind?: string;
     regionKindLabel?: string;
+    addressType?: AddressUsageKind;
 }
 
 interface AddressValueProps {
@@ -81,44 +90,166 @@ interface AddressValueProps {
 
 const AddressValue = ({ value, meta, className }: AddressValueProps): JSX.Element => {
     const { format, formatValue, cycleFormat } = useAddressFormat();
+    const { resolveAddress, hasResolver } = useAddressResolution();
 
     if (value === undefined || Number.isNaN(value)) {
         const emptyClassName = className ? `${className} address-value address-value--empty` : 'address-value address-value--empty';
         return <span className={emptyClassName}>{'—'}</span>;
     }
 
+    const resolution = useMemo(() => {
+        if (!hasResolver) {
+            return null;
+        }
+        const options = meta?.addressType ? { addressType: meta.addressType } : undefined;
+        return resolveAddress(value, options) ?? null;
+    }, [hasResolver, resolveAddress, value, meta?.addressType]);
+
+    const describeSignedOffset = (offset: number | undefined): string | null => {
+        if (offset === undefined || Number.isNaN(offset)) {
+            return null;
+        }
+        if (offset === 0) {
+            return 'start';
+        }
+        const magnitude = Math.abs(offset);
+        const sign = offset >= 0 ? '+' : '-';
+        return `${sign}${formatHex(magnitude)} (${sign}${magnitude.toLocaleString()} bytes)`;
+    };
+
+    type TooltipRow = {
+        key: string;
+        label: string;
+        value: string;
+    };
+
+    const rows: TooltipRow[] = [
+        { key: 'hex', label: 'Hex', value: formatValue(value, 'hex') },
+        { key: 'decimal', label: 'Decimal', value: formatValue(value, 'decimal') },
+    ];
+
+    if (meta?.label) {
+        rows.push({ key: 'label', label: 'Label', value: meta.label });
+    }
+
+    const region = resolution?.region;
+    const section = resolution?.section;
+    const symbol = resolution?.symbol;
+
+    const effectiveRegionName = region?.windowName ?? meta?.regionName ?? meta?.regionId;
+    const effectiveRegionId = region?.windowId ?? meta?.regionId;
+    const regionLabel = meta?.regionKindLabel ?? meta?.regionKind ?? (region ? 'Region' : undefined);
+
+    if (regionLabel && (effectiveRegionName || effectiveRegionId || region?.addressType || meta?.addressType)) {
+        const parts: string[] = [];
+        if (effectiveRegionName) {
+            parts.push(effectiveRegionName);
+        }
+        if (effectiveRegionId && effectiveRegionId !== effectiveRegionName) {
+            parts.push(`(${effectiveRegionId})`);
+        }
+        const typeLabel = region?.addressType
+            ? ADDRESS_TYPE_LABELS[region.addressType]
+            : meta?.addressType
+                ? ADDRESS_TYPE_LABELS[meta.addressType]
+                : undefined;
+        if (typeLabel) {
+            parts.push(typeLabel);
+        }
+        if (parts.length > 0) {
+            rows.push({ key: 'region', label: regionLabel, value: parts.join(' • ') });
+        }
+    }
+
+    const regionOffset = describeSignedOffset(region?.offset);
+    if (regionOffset) {
+        rows.push({
+            key: 'region-offset',
+            label: 'Offset in range',
+            value: regionOffset === 'start' ? 'Start of range' : regionOffset,
+        });
+    }
+
+    const windowOffset = describeSignedOffset(region?.windowOffset);
+    if (windowOffset) {
+        rows.push({
+            key: 'window-offset',
+            label: 'Offset from window base',
+            value: windowOffset === 'start' ? 'At window base' : windowOffset,
+        });
+    }
+
+    if (region?.blockName || region?.blockId) {
+        const parts: string[] = [];
+        if (region.blockName) {
+            parts.push(region.blockName);
+        }
+        if (region.blockId && region.blockId !== region.blockName) {
+            parts.push(`(${region.blockId})`);
+        }
+        if (parts.length > 0) {
+            rows.push({ key: 'block', label: 'Block', value: parts.join(' • ') });
+        }
+    }
+
+    if (region?.bankName || region?.bankId) {
+        const parts: string[] = [];
+        if (region.bankName) {
+            parts.push(region.bankName);
+        }
+        if (region.bankId && region.bankId !== region.bankName) {
+            parts.push(`(${region.bankId})`);
+        }
+        if (parts.length > 0) {
+            rows.push({ key: 'bank', label: 'Bank', value: parts.join(' • ') });
+        }
+    }
+
+    if (section) {
+        const parts: string[] = [section.name];
+        if (section.id !== section.name) {
+            parts.push(`(${section.id})`);
+        }
+        const sectionTypeLabel = ADDRESS_TYPE_LABELS[section.addressType];
+        if (sectionTypeLabel) {
+            parts.push(sectionTypeLabel);
+        }
+        rows.push({ key: 'section', label: 'Section', value: parts.join(' • ') });
+    }
+
+    if (symbol) {
+        const parts: string[] = [symbol.name];
+        if (symbol.nameMangled && symbol.nameMangled !== symbol.name) {
+            parts.push(symbol.nameMangled);
+        }
+        rows.push({ key: 'symbol', label: 'Symbol', value: parts.join(' • ') });
+
+        const symbolOffset = describeSignedOffset(symbol.offset);
+        if (symbolOffset) {
+            rows.push({
+                key: 'symbol-offset',
+                label: 'Symbol offset',
+                value: symbolOffset === 'start' ? 'At symbol start' : symbolOffset,
+            });
+        }
+        if (symbol.size && symbol.size > 0) {
+            rows.push({
+                key: 'symbol-size',
+                label: 'Symbol size',
+                value: `${symbol.size.toLocaleString()} bytes`,
+            });
+        }
+    }
+
     const display = formatValue(value, format);
     const tooltipContent = (
         <div className="address-tooltip">
-            <div className="address-tooltip-row">
-                <span className="address-tooltip-label">Hex</span>
-                <span>{formatValue(value, 'hex')}</span>
-            </div>
-            <div className="address-tooltip-row">
-                <span className="address-tooltip-label">Decimal</span>
-                <span>{formatValue(value, 'decimal')}</span>
-            </div>
-            {meta?.label ? (
-                <div className="address-tooltip-row">
-                    <span className="address-tooltip-label">Label</span>
-                    <span>{meta.label}</span>
+            {rows.map((row) => (
+                <div className="address-tooltip-row" key={row.key}>
+                    <span className="address-tooltip-label">{row.label}</span>
+                    <span>{row.value}</span>
                 </div>
-            ) : null}
-            {meta?.regionName || meta?.regionId ? (
-                <div className="address-tooltip-row">
-                    <span className="address-tooltip-label">Region</span>
-                    <span>
-                        {meta.regionName ?? meta.regionId}
-                        {meta.regionId && meta.regionName ? ` (${meta.regionId})` : null}
-                    </span>
-                </div>
-            ) : null}
-            {meta?.regionKind || meta?.regionKindLabel ? (
-                <div className="address-tooltip-row">
-                    <span className="address-tooltip-label">Kind</span>
-                    <span>{meta.regionKindLabel ?? meta.regionKind}</span>
-                </div>
-            ) : null}
+            ))}
         </div>
     );
 

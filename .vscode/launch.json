@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Web Viewer Debug",
+            "type": "chrome",
+            "request": "launch",
+            "url": "http://localhost:5173",
+            "webRoot": "${workspaceFolder}/packages/viewer",
+            "preLaunchTask": "viewer:dev"
+        }
+    ]
+}

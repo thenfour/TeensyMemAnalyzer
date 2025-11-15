@@ -1,0 +1,72 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build analyzer",
+            "type": "shell",
+            "command": "yarn",
+            "args": [
+                "workspace",
+                "@teensy-mem-explorer/analyzer",
+                "build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "build viewer",
+            "type": "shell",
+            "command": "yarn",
+            "args": [
+                "workspace",
+                "@teensy-mem-explorer/viewer",
+                "build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": [
+                "build analyzer"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "viewer:dev",
+            "type": "shell",
+            "command": "yarn",
+            "args": [
+                "workspace",
+                "@teensy-mem-explorer/viewer",
+                "dev"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": [
+                "build viewer"
+            ],
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "vite",
+                "pattern": [
+                    {
+                        "regexp": ".*",
+                        "file": 0,
+                        "location": 0,
+                        "message": 0
+                    }
+                ],
+                "background": {
+                    "activeOnStart": true,
+                    "endsPattern": ".*ready in .*"
+                }
+            }
+        }
+    ]
+}

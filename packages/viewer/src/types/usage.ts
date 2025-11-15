@@ -1,4 +1,4 @@
-import type { AddressUsageKind } from '@teensy-mem-explorer/analyzer';
+import type { AddressUsageKind } from '@analyzer';
 
 export type RangeBounds = {
     start: number;

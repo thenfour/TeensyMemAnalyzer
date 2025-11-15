@@ -9,7 +9,7 @@ import {
   type Analysis,
   type Summaries,
   type TeensySizeReportSummary,
-} from '@teensy-mem-explorer/analyzer';
+} from '@analyzer';
 import type { AnalysisBroadcastPayload, ServerConfig, ServerMessage, ServerStatusPayload } from '../shared/protocol';
 
 const DEFAULT_PORT = Number.parseInt(process.env.TME_VIEWER_PORT ?? '5317', 10);

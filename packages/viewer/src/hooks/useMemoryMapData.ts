@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { Analysis, Summaries } from '@teensy-mem-explorer/analyzer';
+import type { Analysis, Summaries } from '@analyzer';
 import { hashColor } from '../utils/color';
 
 export type MemoryMapSpanType = 'occupied' | 'free' | 'reserved' | 'block' | 'padding';

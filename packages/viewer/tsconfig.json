@@ -20,7 +20,15 @@
         "types": [
             "vite/client"
         ],
-        "baseUrl": "."
+        "baseUrl": ".",
+        "paths": {
+            "@analyzer": [
+                "./src/analyzer/index.ts"
+            ],
+            "@analyzer/*": [
+                "./src/analyzer/*"
+            ]
+        }
     },
     "include": [
         "src"

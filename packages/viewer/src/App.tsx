@@ -4,7 +4,7 @@ import {
     type Summaries,
     type TeensySizeReportSummary,
     type TeensySizeReportEntrySummary,
-} from '@teensy-mem-explorer/analyzer';
+} from '@analyzer';
 import type {
     AnalysisBroadcastPayload,
     HealthResponse,

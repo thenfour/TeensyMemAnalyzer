@@ -2,10 +2,7 @@
     "files": [],
     "references": [
         {
-            "path": "packages/analyzer"
-        },
-        {
-            "path": "packages/cli"
+            "path": "packages/viewer"
         }
     ]
 }

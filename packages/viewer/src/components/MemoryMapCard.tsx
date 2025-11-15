@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent, CSSProperties } from 'react';
-import type { AddressUsageKind, Analysis, Summaries, Symbol as AnalyzerSymbol } from '@teensy-mem-explorer/analyzer';
+import type { AddressUsageKind, Analysis, Summaries, Symbol as AnalyzerSymbol } from '@analyzer';
 import { SizeValue } from './SizeValue';
 import AddressValue from './AddressValue';
 import SymbolContributionTable, { type SymbolContribution } from './SymbolContributionTable';

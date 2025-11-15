@@ -2,7 +2,7 @@ import type {
   Analysis,
   Summaries,
   TeensySizeReportSummary,
-} from '@teensy-mem-explorer/analyzer';
+} from '@analyzer';
 
 export type ServerLifecycleState = 'idle' | 'watching' | 'running' | 'error';
 

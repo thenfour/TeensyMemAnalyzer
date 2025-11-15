@@ -1,5 +1,6 @@
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 import Ajv, { ErrorObject, ValidateFunction } from 'ajv';
 import { MemoryMapConfig } from '../model';
 
@@ -14,7 +15,8 @@ export interface LoadMemoryMapOptions {
   schemaPath?: string;
 }
 
-const DEFAULT_CONFIG_DIR = path.resolve(__dirname, '../../../../config');
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_CONFIG_DIR = path.resolve(moduleDir, '../../../../../config');
 
 const validatorCache = new Map<string, ValidateFunction>();
 

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type PropsWithChildren } from 'react';
-import type { AddressUsageKind } from '@teensy-mem-explorer/analyzer';
+import type { AddressUsageKind } from '@analyzer';
 import { useAddressResolution } from '../context/AddressResolverContext';
 import Tooltip from './Tooltip';
 

@@ -1,10 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
+
+const analyzerPath = fileURLToPath(new URL('./src/analyzer', import.meta.url));
+const reactPlugin = react() as unknown as import('vite').PluginOption;
 
 export default defineConfig({
-  plugins: [react()],
-  optimizeDeps: {
-    include: ['@teensy-mem-explorer/analyzer/analysis/reports/teensy-size'],
+  plugins: [reactPlugin],
+  resolve: {
+    alias: {
+      '@analyzer': analyzerPath,
+    },
   },
   server: {
     port: 5173,

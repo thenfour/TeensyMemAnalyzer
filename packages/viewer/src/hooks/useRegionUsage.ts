@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { Analysis, Summaries } from '@teensy-mem-explorer/analyzer';
+import type { Analysis, Summaries } from '@analyzer';
 import type { UsageBarData } from '../types/usage';
 import { computeUsagePercent } from '../utils/usage';
 

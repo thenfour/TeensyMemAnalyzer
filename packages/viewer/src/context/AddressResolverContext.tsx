@@ -1,10 +1,10 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import type { Analysis } from '@teensy-mem-explorer/analyzer';
+import type { Analysis } from '@analyzer';
 import {
     createAddressResolver,
     type AddressLookupOptions,
     type AddressLookupResult,
-} from '@teensy-mem-explorer/analyzer/analysis/address-resolver';
+} from '@analyzer/analysis/address-resolver';
 
 interface AddressResolutionContextValue {
     resolveAddress: (address: number, options?: AddressLookupOptions) => AddressLookupResult | null;

@@ -13,11 +13,12 @@ import type {
     ServerStatusPayload,
 } from './shared/protocol';
 import { SizeValue, useSizeFormat } from './components/SizeValue';
-import TeensySizeCard, { type TeensySizePanel } from './components/TeensySizeCard';
+import TeensySizeCard, { TeensySizeWithExtras, type TeensySizePanel } from './components/TeensySizeCard';
 import RegionUsageCard from './components/RegionUsageCard';
 import MemoryMapCard from './components/MemoryMapCard';
 import TreemapCard from './components/TreemapCard';
 import RuntimeBankCard from './components/RuntimeBankCard';
+import TemplateGroupsCard from './components/TemplateGroupsCard';
 import { useRegionUsage } from './hooks/useRegionUsage';
 import { AddressResolutionProvider } from './context/AddressResolverContext';
 
@@ -334,20 +335,27 @@ const App = (): JSX.Element => {
         formatValue,
     });
 
-    const teensySizePanels = useMemo<TeensySizePanel[]>(() => {
+    const teensySizeWithExtras = useMemo<TeensySizeWithExtras>(() => {
+        const ret: TeensySizeWithExtras = {
+            panels: [],
+            freeStackBytes: null,
+            fastRunCodeBytes: null,
+            flashMemCodeBytes: null,
+            totalCodeBytes: null,
+        };
         if (!latestReport) {
-            return [];
+            return ret;
         }
 
-        const panels: TeensySizePanel[] = [];
         const report = latestReport;
 
         if (report.flash) {
             const flash = report.flash;
             const flashCode = getBucketValue(flash, 'code');
+            ret.totalCodeBytes = flashCode;
             const flashData = getBucketValue(flash, 'data');
             const flashHeaders = getBucketValue(flash, 'headers');
-            panels.push({
+            ret.panels.push({
                 title: 'FLASH',
                 rows: [
                     { label: 'Code', value: flashCode },
@@ -362,8 +370,10 @@ const App = (): JSX.Element => {
             const ram1 = report.ram1;
             const variables = sumBucketValues(ram1, ['data', 'bss', 'noinit']);
             const codeBytes = ram1.codeBytes ?? getBucketValue(ram1, 'code');
+            ret.fastRunCodeBytes = codeBytes;
             const padding = Math.max(ram1.adjustedUsedBytes - ram1.rawUsedBytes, 0);
-            panels.push({
+            ret.freeStackBytes = ram1.freeBytes;
+            ret.panels.push({
                 title: 'RAM1',
                 rows: [
                     { label: 'Code (ITCM)', value: codeBytes },
@@ -377,7 +387,7 @@ const App = (): JSX.Element => {
         if (report.ram2) {
             const ram2 = report.ram2;
             const variables = sumBucketValues(ram2, ['data', 'bss', 'noinit']);
-            panels.push({
+            ret.panels.push({
                 title: 'RAM2',
                 rows: [
                     { label: 'Variables', value: variables },
@@ -386,7 +396,11 @@ const App = (): JSX.Element => {
             });
         }
 
-        return panels;
+        if (ret.totalCodeBytes !== null && ret.fastRunCodeBytes !== null) {
+            ret.flashMemCodeBytes = ret.totalCodeBytes - ret.fastRunCodeBytes;
+        }
+
+        return ret;
     }, [latestReport]);
 
     const teensySizeError = null;
@@ -463,6 +477,8 @@ const App = (): JSX.Element => {
         }),
         [],
     );
+
+    console.log(latestAnalysis);
 
     return (
         <AddressResolutionProvider analysis={latestAnalysis}>
@@ -639,11 +655,56 @@ const App = (): JSX.Element => {
                     </label>
                     {renderAnalysisSummary()}
 
-                    <TeensySizeCard hasAnalysis={Boolean(latestAnalysis)} error={teensySizeError} panels={teensySizePanels} />
+                    {latestAnalysis && (
+                        <section className="summary-card">
+                            <dl>
+                                <dt>Stack / locals available</dt>
+                                <dd>
+                                    {teensySizeWithExtras.freeStackBytes !== null ? (
+                                        <SizeValue value={teensySizeWithExtras.freeStackBytes} />
+                                    ) : (
+                                        'N/A'
+                                    )}
+                                </dd>
+                                <dt>Fast run code size (FASTRUN / default code bloating RAM1)</dt>
+                                <dd>
+                                    {teensySizeWithExtras.fastRunCodeBytes !== null ? (
+                                        <SizeValue value={teensySizeWithExtras.fastRunCodeBytes} />
+                                    ) : (
+                                        'N/A'
+                                    )}
+                                </dd>
+                                <dt>Code only in FLASHMEM (non-performance critical but keeps RAM1 usage down)</dt>
+                                <dd>
+                                    {teensySizeWithExtras.flashMemCodeBytes !== null ? (
+                                        <SizeValue value={teensySizeWithExtras.flashMemCodeBytes} />
+                                    ) : (
+                                        'N/A'
+                                    )}
+                                </dd>
+                                <dt>Total code size</dt>
+                                <dd>
+                                    {teensySizeWithExtras.totalCodeBytes !== null ? (
+                                        <SizeValue value={teensySizeWithExtras.totalCodeBytes} />
+                                    ) : (
+                                        'N/A'
+                                    )}
+                                </dd>
+                            </dl>
+                        </section>
+
+                    )}
+
+                    <TeensySizeCard hasAnalysis={Boolean(latestAnalysis)} error={teensySizeError} panels={teensySizeWithExtras.panels} />
 
                     <RuntimeBankCard usage={runtimeBankUsage} lastRunCompletedAt={lastRunCompletedAt} />
 
                     <RegionUsageCard regionUsage={regionUsage} lastRunCompletedAt={lastRunCompletedAt} />
+
+                    <TemplateGroupsCard
+                        groups={latestAnalysis?.templateGroups ?? []}
+                        lastRunCompletedAt={lastRunCompletedAt}
+                    />
 
                     <MemoryMapCard
                         analysis={latestAnalysis}

@@ -8,6 +8,14 @@ export type TeensySizePanel = {
     }[];
 };
 
+export type TeensySizeWithExtras = {
+    panels: TeensySizePanel[];
+    freeStackBytes: number | null;
+    fastRunCodeBytes: number | null;
+    flashMemCodeBytes: number | null;
+    totalCodeBytes: number | null;
+};
+
 interface TeensySizeCardProps {
     hasAnalysis: boolean;
     error: string | null;
@@ -20,7 +28,7 @@ const TeensySizeCard = ({ hasAnalysis, error, panels }: TeensySizeCardProps): JS
     return (
         <section className="summary-card">
             <div className="summary-header">
-                <h2>Teensy-size Compatibility</h2>
+                <h2>Teensy-size</h2>
                 <div className="summary-meta">
                     {hasAnalysis ? (
                         error ? (

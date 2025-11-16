@@ -160,6 +160,47 @@ export interface Symbol {
   locations?: SymbolLocation[];
 }
 
+export interface TemplateGroupSymbolSummary {
+  symbolId: string;
+  name: string;
+  mangledName?: string;
+  sizeBytes: number;
+  specializationKey?: string | null;
+  sectionId?: string;
+  blockId?: string;
+  windowId?: string;
+  addr?: number;
+  primaryLocation?: SymbolLocation;
+}
+
+export interface TemplateGroupTotals {
+  symbolCount: number;
+  specializationCount: number;
+  sizeBytes: number;
+  uniqueSizeBytes: number;
+  largestSymbolSizeBytes: number;
+  smallestSymbolSizeBytes: number;
+}
+
+export interface TemplateGroupSpecializationSummary {
+  key: string | null;
+  symbols: TemplateGroupSymbolSummary[];
+  totals: {
+    symbolCount: number;
+    sizeBytes: number;
+    uniqueSizeBytes: number;
+  };
+}
+
+export interface TemplateGroupSummary {
+  id: string;
+  displayName: string;
+  isTemplate: boolean;
+  symbols: TemplateGroupSymbolSummary[];
+  specializations: TemplateGroupSpecializationSummary[];
+  totals: TemplateGroupTotals;
+}
+
 export interface TargetInfo {
   name: string;
   addressModel: 'flat';
@@ -344,6 +385,7 @@ export interface Analysis {
   config: MemoryMapConfig;
   sections: Section[];
   symbols: Symbol[];
+  templateGroups: TemplateGroupSummary[];
 }
 
 export const createEmptyAnalysis = (): Analysis => ({
@@ -366,6 +408,7 @@ export const createEmptyAnalysis = (): Analysis => ({
   },
   sections: [],
   symbols: [],
+  templateGroups: [],
 });
 
 export interface AnalyzeBuildParams {

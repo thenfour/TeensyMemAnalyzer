@@ -81,6 +81,14 @@ For future agent-driven edits (human or AI), keep these guardrails in mind:
   caught early. Document rounding rules and capacities so parity tests stay meaningful.
 - **Avoid blanket fallbacks.** When a new section appears, force an explicit category assignment.
   Broad "other" buckets are reserved for intentional aggregation, not as safety nets.
+- **Use existing patterns**. New features should conform to the design details of
+  existing similar features.
+- **Keep concerns focused**. When adding features to a component or function, avoid
+  bloating the existing code by just inserting to the new code. New concerns or features or algorithms
+  should be broken out into their own functions/classes/modules/components, even if they are used only once.
+  Break out logic into utility functions/components in order to keep calling code readible and clean.
+- **Do not duplicate code**. New algorithms, routines, components should attempt to use existing
+  components/classes/functions rather than re-implementing.
 
 ---
 

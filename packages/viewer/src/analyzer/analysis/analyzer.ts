@@ -7,6 +7,7 @@ import { parseReadelfSections } from '../parsers/readelf';
 import { parseObjdumpSectionHeaders } from '../parsers/objdump';
 import { parseNmOutput } from '../parsers/nm';
 import { assignSymbolsToSections } from './symbol-assignment';
+import { buildTemplateGroups } from './template-groups';
 import { applySectionCategories } from './section-classification';
 import { assignBlocksToSections } from './block-assignment';
 
@@ -86,6 +87,7 @@ export const analyzeBuild = async (params: AnalyzeBuildParams): Promise<Analysis
   const nmSymbols = parseNmOutput(nmResult.stdout);
   const symbolAssignment = assignSymbolsToSections(nmSymbols, analysis.sections);
   analysis.symbols = symbolAssignment.symbols;
+  analysis.templateGroups = buildTemplateGroups(analysis.symbols);
 
   if (symbolAssignment.warnings.length > 0) {
     symbolAssignment.warnings.forEach((warning) => {

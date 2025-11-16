@@ -703,6 +703,7 @@ const App = (): JSX.Element => {
 
                     <TemplateGroupsCard
                         groups={latestAnalysis?.templateGroups ?? []}
+                        symbols={latestAnalysis?.symbols ?? []}
                         lastRunCompletedAt={lastRunCompletedAt}
                     />
 

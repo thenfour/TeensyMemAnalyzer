@@ -738,6 +738,22 @@ rect {
     text-decoration: underline;
 }
 
+.symbol-value {
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.symbol-value:hover,
+.symbol-value:focus-visible {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
 .address-value.address-value--empty {
     cursor: default;
     color: #94a3b8;

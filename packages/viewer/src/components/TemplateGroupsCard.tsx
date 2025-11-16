@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
-import type { TemplateGroupSummary } from '@analyzer';
+import type { Symbol as AnalyzerSymbol, TemplateGroupSummary } from '@analyzer';
 import { SizeValue } from './SizeValue';
+import SymbolValue from './SymbolValue';
 
 interface TemplateGroupsCardProps {
     groups: TemplateGroupSummary[];
+    symbols: AnalyzerSymbol[];
     lastRunCompletedAt: Date | null;
 }
 
@@ -49,7 +51,7 @@ const matchesFilter = (group: TemplateGroupSummary, needle: string): boolean => 
     return fields.some((field) => field.toLowerCase().includes(needle));
 };
 
-const TemplateGroupsCard = ({ groups, lastRunCompletedAt }: TemplateGroupsCardProps): JSX.Element => {
+const TemplateGroupsCard = ({ groups, symbols, lastRunCompletedAt }: TemplateGroupsCardProps): JSX.Element => {
     const [filterText, setFilterText] = useState('');
     const [showTemplates, setShowTemplates] = useState(true);
     const [showNonTemplates, setShowNonTemplates] = useState(true);
@@ -59,6 +61,8 @@ const TemplateGroupsCard = ({ groups, lastRunCompletedAt }: TemplateGroupsCardPr
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
     const normalizedFilter = filterText.trim().toLowerCase();
+
+    const symbolById = useMemo(() => new Map(symbols.map((symbol) => [symbol.id, symbol])), [symbols]);
 
     const filteredGroups = useMemo(() =>
         groups.filter((group) => {
@@ -273,7 +277,13 @@ const TemplateGroupsCard = ({ groups, lastRunCompletedAt }: TemplateGroupsCardPr
                                         <tbody>
                                             {group.symbols.map((symbol) => (
                                                 <tr key={symbol.symbolId}>
-                                                    <th scope="row">{symbol.name}</th>
+                                                    <th scope="row">
+                                                        <SymbolValue
+                                                            symbolId={symbol.symbolId}
+                                                            symbol={symbolById.get(symbol.symbolId)}
+                                                            summary={symbol}
+                                                        />
+                                                    </th>
                                                     <td>{symbol.specializationKey ?? '—'}</td>
                                                     <td>
                                                         <SizeValue value={symbol.sizeBytes} />

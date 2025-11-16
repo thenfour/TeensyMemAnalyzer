@@ -761,17 +761,23 @@ rect {
 }
 
 .tooltip {
-    position: relative;
     display: inline-flex;
     align-items: center;
 }
 
-.tooltip-bubble {
-    position: absolute;
-    z-index: 20;
-    top: calc(100% + 0.35rem);
-    left: 50%;
+.tooltip-overlay {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
     transform: translateX(-50%);
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.tooltip-bubble {
+    position: relative;
+    z-index: 20;
     background-color: #1e293b;
     color: #f8fafc;
     border-radius: 6px;
@@ -782,6 +788,11 @@ rect {
     max-width: 320px;
     line-height: 1.4;
     pointer-events: none;
+    margin-top: 0.35rem;
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    width: max-content;
 }
 
 .tooltip-bubble::after {

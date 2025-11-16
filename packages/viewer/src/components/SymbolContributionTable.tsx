@@ -1,8 +1,11 @@
+import type { Symbol as AnalyzerSymbol } from '@analyzer';
 import AddressValue from './AddressValue';
 import { SizeValue } from './SizeValue';
+import SymbolValue from './SymbolValue';
 
 export interface SymbolContribution {
     id: string;
+    symbolId: string;
     name: string;
     addr: number;
     coverage: number;
@@ -11,10 +14,11 @@ export interface SymbolContribution {
 
 interface SymbolContributionTableProps {
     symbols: SymbolContribution[];
+    symbolLookup: Map<string, AnalyzerSymbol>;
     emptyMessage?: string;
 }
 
-const SymbolContributionTable = ({ symbols, emptyMessage = 'No symbols available.' }: SymbolContributionTableProps): JSX.Element => {
+const SymbolContributionTable = ({ symbols, symbolLookup, emptyMessage = 'No symbols available.' }: SymbolContributionTableProps): JSX.Element => {
     if (symbols.length === 0) {
         return <p className="symbol-table-empty">{emptyMessage}</p>;
     }
@@ -32,7 +36,9 @@ const SymbolContributionTable = ({ symbols, emptyMessage = 'No symbols available
                 <tbody>
                     {symbols.map((symbol) => (
                         <tr key={symbol.id}>
-                            <th scope="row" className="symbol-table-name">{symbol.name}</th>
+                            <th scope="row" className="symbol-table-name">
+                                <SymbolValue symbolId={symbol.symbolId} symbol={symbolLookup.get(symbol.symbolId)} />
+                            </th>
                             <td className="symbol-table-address">
                                 <AddressValue value={symbol.addr} />
                             </td>

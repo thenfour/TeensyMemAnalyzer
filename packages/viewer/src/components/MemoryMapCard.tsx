@@ -53,6 +53,7 @@ interface MemoryMapBankVisualizationProps {
     bankStart: number;
     bankEnd: number;
     symbolIndex: SymbolIndex;
+    symbolLookup: Map<string, AnalyzerSymbol>;
 }
 
 type MemoryMapStyle = CSSProperties & {
@@ -68,6 +69,7 @@ const MemoryMapBankVisualization = ({
     bankStart,
     bankEnd,
     symbolIndex,
+    symbolLookup,
 }: MemoryMapBankVisualizationProps): JSX.Element => {
     const { width, height, padding, minSpanHeight } = MEMORY_MAP_DIMENSIONS;
     const labelOffset = 24;
@@ -307,14 +309,22 @@ const MemoryMapBankVisualization = ({
                 </svg>
                 <div className="memory-map-bank-details">
                     <h4>Selection details</h4>
-                    <MemoryMapSpanDetails span={selectedSpan} symbolIndex={symbolIndex} />
+                    <MemoryMapSpanDetails span={selectedSpan} symbolIndex={symbolIndex} symbolLookup={symbolLookup} />
                 </div>
             </div>
         </div>
     );
 };
 
-const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | null; symbolIndex: SymbolIndex }): JSX.Element => {
+const MemoryMapSpanDetails = ({
+    span,
+    symbolIndex,
+    symbolLookup,
+}: {
+    span: MemoryMapSpan | null;
+    symbolIndex: SymbolIndex;
+    symbolLookup: Map<string, AnalyzerSymbol>;
+}): JSX.Element => {
     const [symbolFilter, setSymbolFilter] = useState('');
     const [symbolLimit, setSymbolLimit] = useState<number>(DEFAULT_SYMBOL_LIMIT);
 
@@ -369,6 +379,7 @@ const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | nul
 
             contributions.push({
                 id: location.id,
+                symbolId: location.symbolId,
                 name: location.name,
                 size: symbolSize,
                 coverage,
@@ -529,7 +540,11 @@ const MemoryMapSpanDetails = ({ span, symbolIndex }: { span: MemoryMapSpan | nul
                         </div>
                     </div>
                 </div>
-                <SymbolContributionTable symbols={displayedSymbols} emptyMessage={emptyMessage} />
+                <SymbolContributionTable
+                    symbols={displayedSymbols}
+                    symbolLookup={symbolLookup}
+                    emptyMessage={emptyMessage}
+                />
             </div>
         </div>
     );
@@ -600,6 +615,16 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
         return map;
     }, [analysis]);
 
+    const symbolLookup = useMemo(() => {
+        const map = new Map<string, AnalyzerSymbol>();
+        if (analysis) {
+            analysis.symbols.forEach((symbol) => {
+                map.set(symbol.id, symbol);
+            });
+        }
+        return map;
+    }, [analysis]);
+
     const memoryMapStyle = useMemo<MemoryMapStyle>(() => ({
         '--memory-map-bank-width': `${MEMORY_MAP_DIMENSIONS.width}px`,
         '--memory-map-bank-height': `${MEMORY_MAP_DIMENSIONS.height}px`,
@@ -639,6 +664,7 @@ const MemoryMapCard = ({ analysis, summaries, lastRunCompletedAt }: MemoryMapCar
                                         bankStart={bank.start}
                                         bankEnd={bank.end}
                                         symbolIndex={symbolIndex}
+                                        symbolLookup={symbolLookup}
                                     />
                                 ))}
                             </div>

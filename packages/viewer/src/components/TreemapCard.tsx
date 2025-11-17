@@ -190,9 +190,9 @@ const TreemapCard = ({ analysis, lastRunCompletedAt }: TreemapCardProps): JSX.El
         return computeTreemapLayout(treemap, {
             width: VIEWBOX_WIDTH,
             height: VIEWBOX_HEIGHT,
-            paddingInner: 2,
+            paddingInner: 3,
             paddingOuter: 6,
-            paddingTop: 6,
+            paddingTop: 24,
             paddingRight: 6,
             paddingBottom: 6,
             paddingLeft: 6,

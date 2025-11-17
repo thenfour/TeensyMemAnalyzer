@@ -961,6 +961,145 @@ rect {
     color: #1e293b;
 }
 
+.treemap-detail-summary {
+    border-top: 1px solid #cbd5e1;
+    padding-top: 1rem;
+    margin-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.treemap-detail-summary-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.treemap-detail-summary-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.treemap-detail-toggle {
+    display: inline-flex;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    overflow: hidden;
+    background-color: #e2e8f0;
+}
+
+.treemap-detail-toggle-button {
+    border: none;
+    background: transparent;
+    padding: 0.3rem 0.9rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #475569;
+    cursor: pointer;
+}
+
+.treemap-detail-toggle-button--active {
+    background-color: #2563eb;
+    color: #f8fafc;
+}
+
+.treemap-detail-toggle-button:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+}
+
+.treemap-summary-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.treemap-summary-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.treemap-summary-header h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #0f172a;
+}
+
+.treemap-summary-count {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+.treemap-summary-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.treemap-summary-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+}
+
+.treemap-summary-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.treemap-summary-label {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.treemap-summary-symbol {
+    max-width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+}
+
+.treemap-summary-subtitle {
+    font-size: 0.8rem;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.treemap-summary-metrics {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    color: #1e293b;
+}
+
+.treemap-summary-percent {
+    font-size: 0.85rem;
+    color: #64748b;
+}
+
+.treemap-summary-note {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #94a3b8;
+}
+
+.treemap-summary-empty {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #94a3b8;
+}
+
 .treemap-details-empty {
     margin: 0;
     color: #64748b;

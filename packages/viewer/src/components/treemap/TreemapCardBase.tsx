@@ -19,6 +19,8 @@ import {
     type TreemapSymbolFilters,
     type TreemapTree,
 } from '../../treemap';
+import TreemapSymbolSummary, { TreemapSymbolSummaryItem } from './TreemapSymbolSummary';
+import TreemapChildrenSummary, { TreemapChildSummaryItem } from './TreemapChildrenSummary';
 
 export interface TreemapDetailRow {
     label: string;
@@ -84,6 +86,13 @@ const formatPercent = (value: number): string => {
     return value.toFixed(1);
 };
 
+type TreemapDetailMode = 'symbols' | 'children';
+
+const DETAIL_MODE_OPTIONS: Array<{ value: TreemapDetailMode; label: string }> = [
+    { value: 'symbols', label: 'Symbols' },
+    { value: 'children', label: 'Direct children' },
+];
+
 const TreemapCardBase = <K extends string, M extends { nodeKind: K }>(
     { analysis, lastRunCompletedAt, filters, config }: TreemapCardBaseProps<K, M>,
 ): JSX.Element => {
@@ -125,6 +134,7 @@ const TreemapCardBase = <K extends string, M extends { nodeKind: K }>(
 
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [hoverState, setHoverState] = useState<HoverState | null>(null);
+    const [detailMode, setDetailMode] = useState<TreemapDetailMode>('symbols');
 
     useEffect(() => {
         if (!layout) {
@@ -188,6 +198,57 @@ const TreemapCardBase = <K extends string, M extends { nodeKind: K }>(
     const hasFiltersApplied = hasActiveFilters(filters);
     const hasNodes = nodes.length > 0;
     const emptyMessage = config.getEmptyStateMessage({ analysis, hasFiltersApplied });
+    const symbolSummaryItems = useMemo<TreemapSymbolSummaryItem<M>[]>(() => {
+        if (!selectedNode) {
+            return [];
+        }
+        const selectionValue = selectedNode.value > 0 ? selectedNode.value : 0;
+        const items: TreemapSymbolSummaryItem<M>[] = [];
+        const stack: Array<TreemapLayoutNode<K, M>> = [selectedNode];
+        while (stack.length > 0) {
+            const current = stack.pop() as TreemapLayoutNode<K, M>;
+            const meta = current.data.meta;
+            const nodeKind = (meta as { nodeKind?: string } | undefined)?.nodeKind;
+            if (meta && nodeKind === 'symbol') {
+                const symbolId = (meta as { symbolId?: string }).symbolId ?? current.id;
+                items.push({
+                    nodeId: current.id,
+                    symbolId,
+                    label: current.data.label,
+                    value: current.value,
+                    percentOfSelection: selectionValue > 0 ? (current.value / selectionValue) * 100 : 0,
+                    meta,
+                });
+                continue;
+            }
+            current.children?.forEach((child) => stack.push(child));
+        }
+        items.sort((a, b) => b.value - a.value);
+        return items;
+    }, [selectedNode]);
+
+    const childSummaryItems = useMemo<TreemapChildSummaryItem<M>[]>(() => {
+        if (!selectedNode?.children || selectedNode.children.length === 0) {
+            return [];
+        }
+        const selectionValue = selectedNode.value > 0 ? selectedNode.value : 0;
+        return selectedNode.children
+            .map((child) => {
+                const meta = child.data.meta as M | undefined;
+                return {
+                    nodeId: child.id,
+                    label: child.data.label,
+                    value: child.value,
+                    percentOfSelection: selectionValue > 0 ? (child.value / selectionValue) * 100 : 0,
+                    kindLabel: config.formatNodeKindLabel(meta),
+                    meta,
+                    childCount: child.children?.length ?? 0,
+                    isLeaf: child.isLeaf,
+                } satisfies TreemapChildSummaryItem<M>;
+            })
+            .sort((a, b) => b.value - a.value);
+    }, [config, selectedNode]);
+
 
     const handleBackgroundClick = (): void => {
         if (layout) {
@@ -443,6 +504,39 @@ const TreemapCardBase = <K extends string, M extends { nodeKind: K }>(
                                         </div>
                                     ))}
                                 </dl>
+                                <div className="treemap-detail-summary">
+                                    <div className="treemap-detail-summary-controls">
+                                        <span className="treemap-detail-summary-title">What&apos;s inside</span>
+                                        <div className="treemap-detail-toggle" role="group" aria-label="Select detail view">
+                                            {DETAIL_MODE_OPTIONS.map((option) => (
+                                                <button
+                                                    key={option.value}
+                                                    type="button"
+                                                    className={`treemap-detail-toggle-button${detailMode === option.value ? ' treemap-detail-toggle-button--active' : ''}`}
+                                                    onClick={() => setDetailMode(option.value)}
+                                                    aria-pressed={detailMode === option.value}
+                                                >
+                                                    {option.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    {detailMode === 'symbols' ? (
+                                        symbolSummaryItems.length > 0 ? (
+                                            <TreemapSymbolSummary
+                                                items={symbolSummaryItems}
+                                                symbolLookup={symbolLookup}
+                                                showHeader={false}
+                                            />
+                                        ) : (
+                                            <p className="treemap-summary-empty">No symbols within this selection.</p>
+                                        )
+                                    ) : childSummaryItems.length > 0 ? (
+                                        <TreemapChildrenSummary items={childSummaryItems} />
+                                    ) : (
+                                        <p className="treemap-summary-empty">This selection has no direct children.</p>
+                                    )}
+                                </div>
                             </>
                         ) : (
                             <p className="treemap-details-empty">Select a node in the treemap to inspect it.</p>

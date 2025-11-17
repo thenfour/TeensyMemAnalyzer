@@ -42,6 +42,8 @@ const formatNodeKindLabel = (kind: MemoryTreemapNodeKind): string => {
             return 'Section';
         case 'symbol':
             return 'Symbol';
+        case 'unused':
+            return 'Unused space';
         default:
             return kind;
     }
@@ -64,6 +66,8 @@ const getNodeColor = (node: MemoryLayoutNode): { fill: string; opacity: number }
             return { fill: hashColor(`section:${meta.sectionId}`), opacity: 0.85 };
         case 'symbol':
             return { fill: hashColor(`symbol:${meta.symbolId}`), opacity: 0.8 };
+        case 'unused':
+            return { fill: '#94a3b8', opacity: 0.7 };
         default:
             return { fill: '#cbd5e1', opacity: 0.9 };
     }
@@ -145,6 +149,15 @@ const buildDetailRows = (
             rows.push({ label: 'Declared size', value: <SizeValue value={meta.symbolSize} /> });
             break;
         }
+        case 'unused':
+            rows.push({ label: 'Window ID', value: meta.windowId });
+            if (meta.windowName && meta.windowName !== meta.windowId) {
+                rows.push({ label: 'Window name', value: meta.windowName });
+            }
+            rows.push({ label: 'Window capacity', value: <SizeValue value={meta.windowCapacity} /> });
+            rows.push({ label: 'Used bytes', value: <SizeValue value={meta.usedBytes} /> });
+            rows.push({ label: 'Unused bytes', value: <SizeValue value={meta.unusedBytes} /> });
+            break;
         default:
             break;
     }

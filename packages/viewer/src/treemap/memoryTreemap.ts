@@ -7,7 +7,7 @@ import type {
 } from '@analyzer';
 import type { TreemapNode, TreemapTree } from './types';
 
-export type MemoryTreemapNodeKind = 'root' | 'window' | 'block' | 'section' | 'symbol';
+export type MemoryTreemapNodeKind = 'root' | 'window' | 'block' | 'section' | 'symbol' | 'unused';
 
 export interface MemoryTreemapRootMeta {
     nodeKind: 'root';
@@ -54,12 +54,22 @@ export interface MemoryTreemapSymbolMeta {
     mangledName?: string;
 }
 
+export interface MemoryTreemapUnusedMeta {
+    nodeKind: 'unused';
+    windowId: string;
+    windowName: string;
+    windowCapacity: number;
+    usedBytes: number;
+    unusedBytes: number;
+}
+
 export type MemoryTreemapNodeMeta =
     | MemoryTreemapRootMeta
     | MemoryTreemapWindowMeta
     | MemoryTreemapBlockMeta
     | MemoryTreemapSectionMeta
-    | MemoryTreemapSymbolMeta;
+    | MemoryTreemapSymbolMeta
+    | MemoryTreemapUnusedMeta;
 
 export type MemoryTreemapNode = TreemapNode<MemoryTreemapNodeKind, MemoryTreemapNodeMeta>;
 export type MemoryTreemapTree = TreemapTree<MemoryTreemapNodeKind, MemoryTreemapNodeMeta>;
@@ -113,6 +123,10 @@ const createAccumulator = (
 const incrementNode = (node: AccumulatorNode, size: number): void => {
     node.value += size;
     node.symbolCount += 1;
+};
+
+const addNodeValue = (node: AccumulatorNode, size: number): void => {
+    node.value += size;
 };
 
 const ensureChild = (
@@ -285,6 +299,66 @@ export const buildMemoryTreemap = (analysis: Analysis | null | undefined): Memor
         symbolNode.value = symbolSize;
         symbolNode.symbolCount = 1;
     });
+
+    // analysis.config.addressWindows.forEach((window) => {
+    //     const windowId = window.id;
+    //     if (!windowId) {
+    //         return;
+    //     }
+
+    //     const windowLabel = window.name ?? windowId;
+    //     const windowNode = ensureChild(root, `window:${windowId}`, () => createAccumulator(
+    //         `window:${windowId}`,
+    //         windowLabel,
+    //         'window',
+    //         {
+    //             nodeKind: 'window',
+    //             windowId,
+    //             windowName: windowLabel,
+    //             addressWindow: window,
+    //             symbolCount: 0,
+    //         },
+    //     ));
+
+    //     const capacity = normalizeSize(window.sizeBytes);
+    //     if (capacity <= 0) {
+    //         return;
+    //     }
+
+    //     const usedBytes = windowNode.value;
+    //     const unusedBytes = Math.max(capacity - usedBytes, 0);
+    //     if (unusedBytes <= 0) {
+    //         return;
+    //     }
+
+    //     const unusedNode = ensureChild(windowNode, 'unused', () => createAccumulator(
+    //         `${windowNode.id}:unused`,
+    //         'Unused space',
+    //         'unused',
+    //         {
+    //             nodeKind: 'unused',
+    //             windowId,
+    //             windowName: windowLabel,
+    //             windowCapacity: capacity,
+    //             usedBytes,
+    //             unusedBytes,
+    //         },
+    //     ));
+
+    //     unusedNode.value = unusedBytes;
+    //     unusedNode.symbolCount = 0;
+    //     unusedNode.meta = {
+    //         nodeKind: 'unused',
+    //         windowId,
+    //         windowName: windowLabel,
+    //         windowCapacity: capacity,
+    //         usedBytes,
+    //         unusedBytes,
+    //     } satisfies MemoryTreemapUnusedMeta;
+
+    //     addNodeValue(windowNode, unusedBytes);
+    //     addNodeValue(root, unusedBytes);
+    // });
 
     if (root.children.size === 0) {
         root.label = describeUnknown('No symbol data available', 0);

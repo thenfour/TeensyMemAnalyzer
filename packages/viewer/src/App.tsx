@@ -16,7 +16,8 @@ import { SizeValue, useSizeFormat } from './components/SizeValue';
 import TeensySizeCard, { TeensySizeWithExtras, type TeensySizePanel } from './components/TeensySizeCard';
 import RegionUsageCard from './components/RegionUsageCard';
 import MemoryMapCard from './components/MemoryMapCard';
-import TreemapCard from './components/TreemapCard';
+import MemoryTreemapCard from './components/TreemapCard';
+import SymbolScopeTreemapCard from './components/SymbolScopeTreemapCard';
 import RuntimeBankCard from './components/RuntimeBankCard';
 import TemplateGroupsCard from './components/TemplateGroupsCard';
 import { useRegionUsage } from './hooks/useRegionUsage';
@@ -710,7 +711,8 @@ const App = (): JSX.Element => {
                         summaries={latestSummaries}
                         lastRunCompletedAt={lastRunCompletedAt}
                     />
-                    <TreemapCard analysis={latestAnalysis} lastRunCompletedAt={lastRunCompletedAt} />
+                    <MemoryTreemapCard analysis={latestAnalysis} lastRunCompletedAt={lastRunCompletedAt} />
+                    <SymbolScopeTreemapCard analysis={latestAnalysis} lastRunCompletedAt={lastRunCompletedAt} />
                     <section className="placeholder-grid" />
                 </main>
             </div>

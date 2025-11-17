@@ -674,6 +674,17 @@ rect {
     opacity: 0.5;
 }
 
+.summary-description {
+    margin: 0 0 1rem;
+    color: #475569;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.summary-card .summary-description:last-child {
+    margin-bottom: 0;
+}
+
 .treemap-card .summary-meta {
     gap: 0.75rem;
     flex-wrap: wrap;

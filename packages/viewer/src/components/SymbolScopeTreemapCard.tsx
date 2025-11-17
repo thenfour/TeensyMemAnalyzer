@@ -1,23 +1,23 @@
-import { useEffect, useMemo, useState, type MouseEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import type { Analysis, Symbol as AnalyzerSymbol } from '@analyzer';
 import { SizeValue, useSizeFormat } from './SizeValue';
 import SymbolValue from './SymbolValue';
 import { hashColor } from '../utils/color';
 import {
-    buildMemoryTreemap,
+    buildScopeTreemap,
     computeTreemapLayout,
-    type MemoryTreemapNodeKind,
-    type MemoryTreemapNodeMeta,
+    type ScopeTreemapNodeKind,
+    type ScopeTreemapNodeMeta,
     type TreemapLayoutNode,
     type TreemapLayoutTree,
 } from '../treemap';
 
-interface MemoryTreemapCardProps {
+interface SymbolScopeTreemapCardProps {
     analysis: Analysis | null;
     lastRunCompletedAt: Date | null;
 }
 
-type MemoryLayoutNode = TreemapLayoutNode<MemoryTreemapNodeKind, MemoryTreemapNodeMeta>;
+type ScopeLayoutNode = TreemapLayoutNode<ScopeTreemapNodeKind, ScopeTreemapNodeMeta>;
 
 interface DetailRow {
     label: string;
@@ -30,26 +30,20 @@ const MIN_LABEL_WIDTH = 56;
 const MIN_LABEL_HEIGHT = 28;
 const NODE_TEXT_PADDING = 8;
 
-const formatNodeKindLabel = (kind: MemoryTreemapNodeKind): string => {
+const formatNodeKindLabel = (kind: ScopeTreemapNodeKind): string => {
     switch (kind) {
         case 'root':
             return 'Target summary';
-        case 'window':
-            return 'Address window';
-        case 'block':
-            return 'Logical block';
-        case 'section':
-            return 'Section';
+        case 'scope':
+            return 'Scope';
         case 'symbol':
             return 'Symbol';
-        case 'unused':
-            return 'Unused space';
         default:
             return kind;
     }
 };
 
-const getNodeColor = (node: MemoryLayoutNode): { fill: string; opacity: number } => {
+const getNodeColor = (node: ScopeLayoutNode): { fill: string; opacity: number } => {
     const meta = node.data.meta;
     if (!meta) {
         return { fill: '#e2e8f0', opacity: 1 };
@@ -58,41 +52,28 @@ const getNodeColor = (node: MemoryLayoutNode): { fill: string; opacity: number }
     switch (meta.nodeKind) {
         case 'root':
             return { fill: '#e2e8f0', opacity: 1 };
-        case 'window':
-            return { fill: hashColor(`window:${meta.windowId}`), opacity: 0.95 };
-        case 'block':
-            return { fill: hashColor(`block:${meta.blockId}`), opacity: 0.9 };
-        case 'section':
-            return { fill: hashColor(`section:${meta.sectionId}`), opacity: 0.85 };
+        case 'scope':
+            return { fill: hashColor(`scope:${meta.fullName}`), opacity: 0.9 };
         case 'symbol':
-            return { fill: hashColor(`symbol:${meta.symbolId}`), opacity: 0.8 };
-        case 'unused':
-            return { fill: '#94a3b8', opacity: 0.7 };
+            return { fill: hashColor(`symbol:${meta.symbolId}`), opacity: 0.82 };
         default:
             return { fill: '#cbd5e1', opacity: 0.9 };
     }
 };
 
 const buildDetailRows = (
-    node: MemoryLayoutNode,
+    node: ScopeLayoutNode,
     symbolLookup: Map<string, AnalyzerSymbol>,
 ): DetailRow[] => {
     const meta = node.data.meta;
     if (!meta) {
         return [];
     }
+
     const rows: DetailRow[] = [];
 
     if (node.depth > 0) {
         rows.push({ label: 'Node ID', value: node.id });
-    }
-
-    if (!node.isLeaf) {
-        rows.push({ label: 'Children', value: (node.children?.length ?? 0).toLocaleString() });
-    }
-
-    if (meta.nodeKind === 'window' || meta.nodeKind === 'block' || meta.nodeKind === 'section') {
-        rows.push({ label: 'Symbols', value: meta.symbolCount.toLocaleString() });
     }
 
     switch (meta.nodeKind) {
@@ -100,32 +81,9 @@ const buildDetailRows = (
             rows.push({ label: 'Target', value: meta.targetName });
             rows.push({ label: 'Target ID', value: meta.targetId });
             break;
-        case 'window':
-            rows.push({ label: 'Window ID', value: meta.windowId });
-            if (meta.windowName && meta.windowName !== node.data.label) {
-                rows.push({ label: 'Window name', value: meta.windowName });
-            }
-            break;
-        case 'block':
-            rows.push({ label: 'Block ID', value: meta.blockId });
-            if (meta.blockName && meta.blockName !== node.data.label) {
-                rows.push({ label: 'Block name', value: meta.blockName });
-            }
-            if (meta.windowId) {
-                rows.push({ label: 'Window', value: meta.windowId });
-            }
-            break;
-        case 'section':
-            rows.push({ label: 'Section ID', value: meta.sectionId });
-            if (meta.sectionName && meta.sectionName !== node.data.label) {
-                rows.push({ label: 'Section name', value: meta.sectionName });
-            }
-            if (meta.blockId) {
-                rows.push({ label: 'Block', value: meta.blockId });
-            }
-            if (meta.windowId) {
-                rows.push({ label: 'Window', value: meta.windowId });
-            }
+        case 'scope':
+            rows.push({ label: 'Scope path', value: meta.fullName });
+            rows.push({ label: 'Symbols', value: meta.symbolCount.toLocaleString() });
             break;
         case 'symbol': {
             const symbol = symbolLookup.get(meta.symbolId);
@@ -133,31 +91,15 @@ const buildDetailRows = (
                 label: 'Symbol',
                 value: <SymbolValue symbolId={meta.symbolId} symbol={symbol} />,
             });
-            rows.push({ label: 'Kind', value: meta.symbolKind });
-            if (meta.sectionId) {
-                rows.push({ label: 'Section', value: meta.sectionId });
+            if (meta.fullScope.length > 0) {
+                rows.push({ label: 'Scope', value: meta.fullScope.join('::') });
             }
-            if (meta.blockId) {
-                rows.push({ label: 'Block', value: meta.blockId });
-            }
-            if (meta.windowId) {
-                rows.push({ label: 'Window', value: meta.windowId });
-            }
+            rows.push({ label: 'Declared size', value: <SizeValue value={meta.symbolSize} /> });
             if (meta.mangledName) {
                 rows.push({ label: 'Mangled name', value: meta.mangledName });
             }
-            rows.push({ label: 'Declared size', value: <SizeValue value={meta.symbolSize} /> });
             break;
         }
-        case 'unused':
-            rows.push({ label: 'Window ID', value: meta.windowId });
-            if (meta.windowName && meta.windowName !== meta.windowId) {
-                rows.push({ label: 'Window name', value: meta.windowName });
-            }
-            rows.push({ label: 'Window capacity', value: <SizeValue value={meta.windowCapacity} /> });
-            rows.push({ label: 'Used bytes', value: <SizeValue value={meta.usedBytes} /> });
-            rows.push({ label: 'Unused bytes', value: <SizeValue value={meta.unusedBytes} /> });
-            break;
         default:
             break;
     }
@@ -178,19 +120,19 @@ const formatPercent = (value: number): string => {
     return value.toFixed(1);
 };
 
-const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardProps): JSX.Element => {
+const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt }: SymbolScopeTreemapCardProps): JSX.Element => {
     const { formatValue } = useSizeFormat();
 
-    const treemap = useMemo(() => buildMemoryTreemap(analysis), [analysis]);
+    const treemap = useMemo(() => buildScopeTreemap(analysis), [analysis]);
 
-    const layout = useMemo<TreemapLayoutTree<MemoryTreemapNodeKind, MemoryTreemapNodeMeta> | null>(() => {
+    const layout = useMemo<TreemapLayoutTree<ScopeTreemapNodeKind, ScopeTreemapNodeMeta> | null>(() => {
         if (!treemap) {
             return null;
         }
         return computeTreemapLayout(treemap, {
             width: VIEWBOX_WIDTH,
             height: VIEWBOX_HEIGHT,
-            paddingInner: 3,
+            paddingInner: 2,
             paddingOuter: 6,
             paddingTop: 24,
             paddingRight: 6,
@@ -206,15 +148,15 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
     }, [analysis]);
 
     const nodeIndex = useMemo(() => {
-        const map = new Map<string, MemoryLayoutNode>();
+        const map = new Map<string, ScopeLayoutNode>();
         if (!layout) {
             return map;
         }
-        const stack: MemoryLayoutNode[] = [layout as MemoryLayoutNode];
+        const stack: ScopeLayoutNode[] = [layout as ScopeLayoutNode];
         while (stack.length > 0) {
-            const current = stack.pop() as MemoryLayoutNode;
+            const current = stack.pop() as ScopeLayoutNode;
             map.set(current.id, current);
-            current.children?.forEach((child) => stack.push(child as MemoryLayoutNode));
+            current.children?.forEach((child) => stack.push(child as ScopeLayoutNode));
         }
         return map;
     }, [layout]);
@@ -229,38 +171,38 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
         setSelectedId((current) => (current && nodeIndex.has(current) ? current : layout.id));
     }, [layout, nodeIndex]);
 
-    const selectedNode = useMemo<MemoryLayoutNode | null>(() => {
+    const selectedNode = useMemo<ScopeLayoutNode | null>(() => {
         if (!layout) {
             return null;
         }
         if (!selectedId) {
-            return layout as MemoryLayoutNode;
+            return layout as ScopeLayoutNode;
         }
-        return nodeIndex.get(selectedId) ?? (layout as MemoryLayoutNode);
+        return nodeIndex.get(selectedId) ?? (layout as ScopeLayoutNode);
     }, [layout, nodeIndex, selectedId]);
 
     const nodes = useMemo(() => {
         if (!layout) {
-            return [] as MemoryLayoutNode[];
+            return [] as ScopeLayoutNode[];
         }
-        const collected: MemoryLayoutNode[] = [];
-        const walk = (node: MemoryLayoutNode): void => {
+        const collected: ScopeLayoutNode[] = [];
+        const walk = (node: ScopeLayoutNode): void => {
             if (node.depth > 0) {
                 collected.push(node);
             }
-            node.children?.forEach((child) => walk(child as MemoryLayoutNode));
+            node.children?.forEach((child) => walk(child as ScopeLayoutNode));
         };
-        walk(layout as MemoryLayoutNode);
+        walk(layout as ScopeLayoutNode);
         collected.sort((a, b) => a.depth - b.depth);
         return collected;
     }, [layout]);
 
     const breadcrumbs = useMemo(() => {
         if (!layout || !selectedNode) {
-            return [] as MemoryLayoutNode[];
+            return [] as ScopeLayoutNode[];
         }
-        const trail: MemoryLayoutNode[] = [];
-        let current: MemoryLayoutNode | undefined | null = selectedNode;
+        const trail: ScopeLayoutNode[] = [];
+        let current: ScopeLayoutNode | undefined | null = selectedNode;
         while (current) {
             trail.push(current);
             if (!current.parentId) {
@@ -275,12 +217,11 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
     const percentOfTotal = selectedNode && totalValue > 0 ? (selectedNode.value / totalValue) * 100 : 0;
     const percentLabel = formatPercent(percentOfTotal);
     const detailRows = selectedNode ? buildDetailRows(selectedNode, symbolLookup) : [];
-    const selectedMeta = selectedNode?.data.meta ?? null;
-    const selectedKindLabel = formatNodeKindLabel(selectedMeta?.nodeKind ?? 'root');
+    const selectedKindLabel = formatNodeKindLabel(selectedNode?.data.meta?.nodeKind ?? 'root');
 
     const emptyMessage = analysis
-        ? 'No symbol data with positive size was found in this analysis.'
-        : 'Load an analysis to explore the symbol treemap.';
+        ? 'No symbols with size information are available to build the scope treemap.'
+        : 'Load an analysis to explore symbol scopes.';
 
     const handleBackgroundClick = (): void => {
         if (layout) {
@@ -288,12 +229,12 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
         }
     };
 
-    const handleNodeClick = (event: MouseEvent<SVGRectElement>, node: MemoryLayoutNode): void => {
+    const handleNodeClick = (event: MouseEvent<SVGRectElement>, node: ScopeLayoutNode): void => {
         event.stopPropagation();
         setSelectedId(node.id);
     };
 
-    const handleNodeKeyDown = (event: KeyboardEvent<SVGRectElement>, node: MemoryLayoutNode): void => {
+    const handleNodeKeyDown = (event: KeyboardEvent<SVGRectElement>, node: ScopeLayoutNode): void => {
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             event.stopPropagation();
@@ -308,7 +249,7 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
     return (
         <section className="summary-card treemap-card">
             <div className="summary-header">
-                <h2>Memory Treemap</h2>
+                <h2>Scope Treemap</h2>
                 <div className="summary-meta">
                     {analysis?.target?.name ? <span className="summary-state">{analysis.target.name}</span> : null}
                     {lastRunCompletedAt ? (
@@ -319,8 +260,8 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
                 </div>
             </div>
             <p className="summary-description">
-                Visualizes analyzed symbols grouped by memory window, logical block, and section. Area corresponds to
-                the total bytes attributed to each group.
+                Groups symbol sizes by C++ namespaces, classes, and function scopes. Use this view to locate large
+                contributions within your code structure.
             </p>
 
             {!layout ? (
@@ -334,7 +275,7 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
                             role="presentation"
                             onClick={handleBackgroundClick}
                         >
-                            <title>Symbol treemap</title>
+                            <title>Symbol scope treemap</title>
                             {nodes.map((node) => {
                                 if (node.width <= 1 || node.height <= 1) {
                                     return null;
@@ -434,7 +375,7 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
                                 </dl>
                             </>
                         ) : (
-                            <p className="treemap-details-empty">Select a region in the treemap to inspect it.</p>
+                            <p className="treemap-details-empty">Select a scope in the treemap to inspect it.</p>
                         )}
                     </aside>
                 </div>
@@ -443,4 +384,4 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
     );
 };
 
-export default MemoryTreemapCard;
+export default SymbolScopeTreemapCard;

@@ -718,9 +718,31 @@ rect {
     gap: 0.5rem;
 }
 
+.treemap-filter-query {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
 .treemap-filter-label {
     font-weight: 600;
     color: #1e293b;
+}
+
+.treemap-filter-input {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.95rem;
+    color: #0f172a;
+    background-color: #ffffff;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.treemap-filter-input:focus-visible {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
 }
 
 .treemap-filter-chips {

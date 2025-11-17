@@ -1,4 +1,4 @@
-import { useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useMemo, type ChangeEvent, type Dispatch, type SetStateAction } from 'react';
 import type { Analysis } from '@analyzer';
 import {
     coerceBlockId,
@@ -9,6 +9,7 @@ import {
     resolveHardwareBankLabel,
     resolveSectionLabel,
     resolveWindowLabel,
+    tokenizeSymbolQuery,
     type TreemapSymbolFilters,
     UNKNOWN_BLOCK_ID,
     UNKNOWN_HARDWARE_BANK_ID,
@@ -27,7 +28,7 @@ interface FilterOption {
     label: string;
 }
 
-type FilterKey = keyof TreemapSymbolFilters;
+type FilterKey = 'hardwareBanks' | 'windows' | 'logicalBlocks' | 'sections';
 
 interface FilterGroup {
     key: FilterKey;
@@ -69,6 +70,7 @@ const buildOptionList = (
 
 const TreemapFilters = ({ analysis, filters, onFiltersChange }: TreemapFiltersProps): JSX.Element | null => {
     const filterState = filters ?? {};
+    const symbolQueryValue = filterState.symbolQuery ?? '';
 
     const symbolStats = useMemo<SymbolLocationStats>(() => {
         if (!analysis) {
@@ -173,6 +175,9 @@ const TreemapFilters = ({ analysis, filters, onFiltersChange }: TreemapFiltersPr
             return null;
         }
         const parts: string[] = [];
+        if (filterState.symbolQueryTokens && filterState.symbolQueryTokens.length > 0 && filterState.symbolQuery) {
+            parts.push(`Symbol name contains: "${filterState.symbolQuery}"`);
+        }
         groups.forEach((group) => {
             const activeSet = filterState[group.key];
             if (!activeSet || activeSet.size === 0) {
@@ -188,7 +193,7 @@ const TreemapFilters = ({ analysis, filters, onFiltersChange }: TreemapFiltersPr
         return parts.length > 0 ? parts.join(' • ') : null;
     }, [filterState, groups, hasFiltersApplied]);
 
-    if (!analysis || groups.length === 0) {
+    if (!analysis) {
         return null;
     }
 
@@ -212,6 +217,22 @@ const TreemapFilters = ({ analysis, filters, onFiltersChange }: TreemapFiltersPr
         });
     };
 
+    const handleQueryChange = (event: ChangeEvent<HTMLInputElement>): void => {
+        const { value } = event.target;
+        onFiltersChange((prev) => {
+            const tokens = tokenizeSymbolQuery(value);
+            if (tokens.length === 0) {
+                const { symbolQuery: _omitQuery, symbolQueryTokens: _omitTokens, ...rest } = prev;
+                return rest;
+            }
+            return {
+                ...prev,
+                symbolQuery: value,
+                symbolQueryTokens: tokens,
+            } satisfies TreemapSymbolFilters;
+        });
+    };
+
     const handleReset = (): void => {
         onFiltersChange(() => ({}));
     };
@@ -227,8 +248,22 @@ const TreemapFilters = ({ analysis, filters, onFiltersChange }: TreemapFiltersPr
                 ) : null}
             </div>
             <p className="summary-description">
-                Toggle memory dimensions to focus the memory and scope treemaps on specific regions.
+                Toggle memory dimensions or search by name to focus the memory and scope treemaps on specific regions.
             </p>
+            <div className="treemap-filter-query">
+                <label className="treemap-filter-label" htmlFor="treemap-symbol-query">
+                    Symbol name contains
+                </label>
+                <input
+                    id="treemap-symbol-query"
+                    className="treemap-filter-input"
+                    type="text"
+                    value={symbolQueryValue}
+                    onChange={handleQueryChange}
+                    placeholder="Filter symbols by name"
+                    spellCheck={false}
+                />
+            </div>
             <div className="treemap-filter-groups">
                 {groups.map((group) => (
                     <div key={group.key} className="treemap-filter-group">

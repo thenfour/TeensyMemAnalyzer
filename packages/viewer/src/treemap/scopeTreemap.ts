@@ -279,12 +279,16 @@ export const buildScopeTreemap = (
         const sectionId = coerceSectionId(symbol.sectionId);
         const hardwareBankId = hardwareBankIdByWindowId.get(windowId) ?? UNKNOWN_HARDWARE_BANK_ID;
 
-        if (!symbolPassesFilters(filters, {
-            hardwareBankId,
-            windowId,
-            blockId,
-            sectionId,
-        })) {
+        if (!symbolPassesFilters(
+            filters,
+            {
+                hardwareBankId,
+                windowId,
+                blockId,
+                sectionId,
+            },
+            symbol.name ?? symbol.nameMangled ?? symbol.id,
+        )) {
             return;
         }
 

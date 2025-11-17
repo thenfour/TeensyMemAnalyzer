@@ -14,4 +14,6 @@ export interface TreemapSymbolFilters {
     windows?: ReadonlySet<string>;
     logicalBlocks?: ReadonlySet<string>;
     sections?: ReadonlySet<string>;
+    symbolQuery?: string;
+    symbolQueryTokens?: string[];
 }

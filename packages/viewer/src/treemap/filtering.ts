@@ -16,6 +16,37 @@ const includes = (set: FilterSet, value: string): boolean => {
     return set.has(value);
 };
 
+export const tokenizeSymbolQuery = (input: string | null | undefined): string[] => {
+    if (!input) {
+        return [];
+    }
+    return input
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0);
+};
+
+const matchesSymbolQuery = (symbolName: string, tokens: string[]): boolean => {
+    if (tokens.length === 0) {
+        return true;
+    }
+
+    const haystack = symbolName.toLowerCase();
+    let searchIndex = 0;
+
+    for (const token of tokens) {
+        const foundIndex = haystack.indexOf(token, searchIndex);
+        if (foundIndex === -1) {
+            return false;
+        }
+        searchIndex = foundIndex + token.length;
+    }
+
+    return true;
+};
+
 export interface SymbolFilterAttributes {
     hardwareBankId: string;
     windowId: string;
@@ -26,17 +57,31 @@ export interface SymbolFilterAttributes {
 export const symbolPassesFilters = (
     filters: TreemapSymbolFilters | undefined,
     attributes: SymbolFilterAttributes,
+    symbolName?: string,
 ): boolean => {
     if (!filters) {
         return true;
     }
 
-    return (
+    if (!(
         includes(filters.hardwareBanks, attributes.hardwareBankId)
         && includes(filters.windows, attributes.windowId)
         && includes(filters.logicalBlocks, attributes.blockId)
         && includes(filters.sections, attributes.sectionId)
-    );
+    )) {
+        return false;
+    }
+
+    const tokens = filters.symbolQueryTokens ?? [];
+    if (tokens.length === 0) {
+        return true;
+    }
+
+    if (!symbolName) {
+        return false;
+    }
+
+    return matchesSymbolQuery(symbolName, tokens);
 };
 
 export const coerceWindowId = (value: string | undefined | null): string => value ?? UNKNOWN_WINDOW_ID;
@@ -94,7 +139,8 @@ export const hasActiveFilters = (filters: TreemapSymbolFilters | undefined): boo
     return Boolean(filters.hardwareBanks?.size)
         || Boolean(filters.windows?.size)
         || Boolean(filters.logicalBlocks?.size)
-        || Boolean(filters.sections?.size);
+        || Boolean(filters.sections?.size)
+        || Boolean(filters.symbolQueryTokens?.length);
 };
 
 export { GLOBAL_SCOPE_LABEL, UNKNOWN_BLOCK_ID, UNKNOWN_HARDWARE_BANK_ID, UNKNOWN_SECTION_ID, UNKNOWN_WINDOW_ID };

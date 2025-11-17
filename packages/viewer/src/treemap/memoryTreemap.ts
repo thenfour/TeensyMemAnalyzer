@@ -251,12 +251,16 @@ export const buildMemoryTreemap = (
         const sectionId = coerceSectionId(symbol.sectionId);
 
         const hardwareBankId = hardwareBankIdByWindowId.get(windowId) ?? UNKNOWN_HARDWARE_BANK_ID;
-        if (!symbolPassesFilters(filters, {
-            hardwareBankId,
-            windowId,
-            blockId,
-            sectionId,
-        })) {
+        if (!symbolPassesFilters(
+            filters,
+            {
+                hardwareBankId,
+                windowId,
+                blockId,
+                sectionId,
+            },
+            symbol.name ?? symbol.nameMangled ?? symbol.id,
+        )) {
             return;
         }
 
@@ -356,69 +360,6 @@ export const buildMemoryTreemap = (
         symbolNode.value = symbolSize;
         symbolNode.symbolCount = 1;
     });
-
-    // commented out code for unused space calculation
-    // it may come back later but for the moment it just looks awkward.
-
-    // analysis.config.addressWindows.forEach((window) => {
-    //     const windowId = window.id;
-    //     if (!windowId) {
-    //         return;
-    //     }
-
-    //     const windowLabel = window.name ?? windowId;
-    //     const windowNode = ensureChild(root, `window:${windowId}`, () => createAccumulator(
-    //         `window:${windowId}`,
-    //         windowLabel,
-    //         'window',
-    //         {
-    //             nodeKind: 'window',
-    //             windowId,
-    //             windowName: windowLabel,
-    //             addressWindow: window,
-    //             symbolCount: 0,
-    //         },
-    //     ));
-
-    //     const capacity = normalizeSize(window.sizeBytes);
-    //     if (capacity <= 0) {
-    //         return;
-    //     }
-
-    //     const usedBytes = windowNode.value;
-    //     const unusedBytes = Math.max(capacity - usedBytes, 0);
-    //     if (unusedBytes <= 0) {
-    //         return;
-    //     }
-
-    //     const unusedNode = ensureChild(windowNode, 'unused', () => createAccumulator(
-    //         `${windowNode.id}:unused`,
-    //         'Unused space',
-    //         'unused',
-    //         {
-    //             nodeKind: 'unused',
-    //             windowId,
-    //             windowName: windowLabel,
-    //             windowCapacity: capacity,
-    //             usedBytes,
-    //             unusedBytes,
-    //         },
-    //     ));
-
-    //     unusedNode.value = unusedBytes;
-    //     unusedNode.symbolCount = 0;
-    //     unusedNode.meta = {
-    //         nodeKind: 'unused',
-    //         windowId,
-    //         windowName: windowLabel,
-    //         windowCapacity: capacity,
-    //         usedBytes,
-    //         unusedBytes,
-    //     } satisfies MemoryTreemapUnusedMeta;
-
-    //     addNodeValue(windowNode, unusedBytes);
-    //     addNodeValue(root, unusedBytes);
-    // });
 
     if (root.children.size === 0) {
         root.label = describeUnknown('No symbol data available', 0);

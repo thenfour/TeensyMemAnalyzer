@@ -300,6 +300,9 @@ export const buildMemoryTreemap = (analysis: Analysis | null | undefined): Memor
         symbolNode.symbolCount = 1;
     });
 
+    // commented out code for unused space calculation
+    // it may come back later but for the moment it just looks awkward.
+
     // analysis.config.addressWindows.forEach((window) => {
     //     const windowId = window.id;
     //     if (!windowId) {

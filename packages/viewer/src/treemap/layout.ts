@@ -1,5 +1,5 @@
 import { hierarchy, treemap as d3Treemap, treemapSquarify } from 'd3-hierarchy';
-import type { HierarchyNode, HierarchyRectangularNode } from 'd3-hierarchy';
+import type { HierarchyRectangularNode } from 'd3-hierarchy';
 import type { TreemapNode, TreemapTree } from './types';
 
 export interface TreemapLayoutOptions {
@@ -79,7 +79,17 @@ export const computeTreemapLayout = <K extends string, M>(
 
     const root = hierarchy<TreemapNode<K, M>>(tree, (node) => node.children ?? []);
 
-    root.sum((node) => (Number.isFinite(node.value) ? Math.max(node.value, 0) : 0));
+    root.sum((node) => {
+        // Internal nodes already carry aggregated values. Returning them here would
+        // cause d3.sum to double-count when it adds the children again. Only emit
+        // a weight for leaves so the hierarchy stays area-equal.
+        if (node.children && node.children.length > 0) {
+            return 0;
+        }
+
+        const rawValue = Number.isFinite(node.value) ? node.value : 0;
+        return rawValue > 0 ? rawValue : 0;
+    });
     root.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
 
     if (!root.value || root.value <= 0) {

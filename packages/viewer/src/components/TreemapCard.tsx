@@ -345,68 +345,70 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTree
             {!layout || !hasNodes ? (
                 <p className="summary-placeholder">{emptyMessage}</p>
             ) : (
-                <div className="treemap-content">
-                    <div className="treemap-surface">
-                        <svg
-                            className="treemap-svg"
-                            viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
-                            role="presentation"
-                            onClick={handleBackgroundClick}
-                        >
-                            <title>Symbol treemap</title>
-                            {nodes.map((node) => {
-                                if (node.width <= 1 || node.height <= 1) {
-                                    return null;
-                                }
-                                const isSelected = selectedNode?.id === node.id;
-                                const { fill, opacity } = getNodeColor(node);
-                                const labelX = node.x + NODE_TEXT_PADDING;
-                                const labelY = node.y + NODE_TEXT_PADDING + 12;
-                                const canShowLabel = node.width >= MIN_LABEL_WIDTH && node.height >= MIN_LABEL_HEIGHT;
-                                const canShowValue = node.height >= MIN_LABEL_HEIGHT * 1.6;
-                                const valueLabel = canShowLabel ? formatValue(node.value, 'pretty') : null;
-                                const ariaLabel = `${node.data.label}, ${formatValue(node.value, 'pretty')}`;
+                <>
+                    <div className="treemap-content">
+                        <div className="treemap-surface">
+                            <svg
+                                className="treemap-svg"
+                                viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
+                                role="presentation"
+                                onClick={handleBackgroundClick}
+                            >
+                                <title>Symbol treemap</title>
+                                {nodes.map((node) => {
+                                    if (node.width <= 1 || node.height <= 1) {
+                                        return null;
+                                    }
+                                    const isSelected = selectedNode?.id === node.id;
+                                    const { fill, opacity } = getNodeColor(node);
+                                    const labelX = node.x + NODE_TEXT_PADDING;
+                                    const labelY = node.y + NODE_TEXT_PADDING + 12;
+                                    const canShowLabel = node.width >= MIN_LABEL_WIDTH && node.height >= MIN_LABEL_HEIGHT;
+                                    const canShowValue = node.height >= MIN_LABEL_HEIGHT * 1.6;
+                                    const valueLabel = canShowLabel ? formatValue(node.value, 'pretty') : null;
+                                    const ariaLabel = `${node.data.label}, ${formatValue(node.value, 'pretty')}`;
 
-                                return (
-                                    <g
-                                        key={node.id}
-                                        className={`treemap-node${isSelected ? ' treemap-node--selected' : ''}${node.isLeaf ? ' treemap-node--leaf' : ''}`}
-                                    >
-                                        <rect
-                                            x={node.x}
-                                            y={node.y}
-                                            width={node.width}
-                                            height={node.height}
-                                            fill={fill}
-                                            fillOpacity={opacity}
-                                            stroke={isSelected ? '#1d4ed8' : '#1f29373a'}
-                                            strokeWidth={isSelected ? 2 : 1}
-                                            rx={8}
-                                            aria-label={ariaLabel}
-                                            role="button"
-                                            tabIndex={0}
-                                            aria-pressed={isSelected}
-                                            onClick={(event) => handleNodeClick(event, node)}
-                                            onKeyDown={(event) => handleNodeKeyDown(event, node)}
-                                        />
-                                        {canShowLabel ? (
-                                            <text x={labelX} y={labelY} className="treemap-node-text">
-                                                <tspan x={labelX} className="treemap-node-label">
-                                                    {node.data.label}
-                                                </tspan>
-                                                {valueLabel && canShowValue ? (
-                                                    <tspan x={labelX} dy={16} className="treemap-node-value">
-                                                        {valueLabel}
+                                    return (
+                                        <g
+                                            key={node.id}
+                                            className={`treemap-node${isSelected ? ' treemap-node--selected' : ''}${node.isLeaf ? ' treemap-node--leaf' : ''}`}
+                                        >
+                                            <rect
+                                                x={node.x}
+                                                y={node.y}
+                                                width={node.width}
+                                                height={node.height}
+                                                fill={fill}
+                                                fillOpacity={opacity}
+                                                stroke={isSelected ? '#1d4ed8' : '#1f29373a'}
+                                                strokeWidth={isSelected ? 2 : 1}
+                                                rx={8}
+                                                aria-label={ariaLabel}
+                                                role="button"
+                                                tabIndex={0}
+                                                aria-pressed={isSelected}
+                                                onClick={(event) => handleNodeClick(event, node)}
+                                                onKeyDown={(event) => handleNodeKeyDown(event, node)}
+                                            />
+                                            {canShowLabel ? (
+                                                <text x={labelX} y={labelY} className="treemap-node-text">
+                                                    <tspan x={labelX} className="treemap-node-label">
+                                                        {node.data.label}
                                                     </tspan>
-                                                ) : null}
-                                            </text>
-                                        ) : null}
-                                    </g>
-                                );
-                            })}
-                        </svg>
+                                                    {valueLabel && canShowValue ? (
+                                                        <tspan x={labelX} dy={16} className="treemap-node-value">
+                                                            {valueLabel}
+                                                        </tspan>
+                                                    ) : null}
+                                                </text>
+                                            ) : null}
+                                        </g>
+                                    );
+                                })}
+                            </svg>
+                        </div>
                     </div>
-                    <aside className="treemap-details">
+                    <div className="treemap-details">
                         {breadcrumbs.length > 1 ? (
                             <div className="treemap-breadcrumb" aria-label="Treemap selection path">
                                 {breadcrumbs.map((crumb, index) => {
@@ -455,8 +457,8 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTree
                         ) : (
                             <p className="treemap-details-empty">Select a region in the treemap to inspect it.</p>
                         )}
-                    </aside>
-                </div>
+                    </div>
+                </>
             )}
         </section>
     );

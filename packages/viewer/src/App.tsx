@@ -478,8 +478,6 @@ const App = (): JSX.Element => {
         [],
     );
 
-    console.log(latestAnalysis);
-
     return (
         <AddressResolutionProvider analysis={latestAnalysis}>
             <div className="app-root" style={appRootStyle}>
@@ -712,7 +710,7 @@ const App = (): JSX.Element => {
                         summaries={latestSummaries}
                         lastRunCompletedAt={lastRunCompletedAt}
                     />
-                    <TreemapCard />
+                    <TreemapCard analysis={latestAnalysis} lastRunCompletedAt={lastRunCompletedAt} />
                     <section className="placeholder-grid" />
                 </main>
             </div>

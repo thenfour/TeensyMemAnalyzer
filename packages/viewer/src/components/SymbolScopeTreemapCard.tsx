@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { Analysis, Symbol as AnalyzerSymbol } from '@analyzer';
 import { SizeValue, useSizeFormat } from './SizeValue';
 import SymbolValue from './SymbolValue';
@@ -32,6 +33,12 @@ const VIEWBOX_HEIGHT = 560;
 const MIN_LABEL_WIDTH = 56;
 const MIN_LABEL_HEIGHT = 28;
 const NODE_TEXT_PADDING = 8;
+
+interface HoverState {
+    nodeId: string;
+    clientX: number;
+    clientY: number;
+}
 
 const formatNodeKindLabel = (kind: ScopeTreemapNodeKind): string => {
     switch (kind) {
@@ -177,13 +184,16 @@ const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt, filters }: Symbo
     }, [layout]);
 
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [hoverState, setHoverState] = useState<HoverState | null>(null);
 
     useEffect(() => {
         if (!layout) {
             setSelectedId(null);
+            setHoverState(null);
             return;
         }
         setSelectedId((current) => (current && nodeIndex.has(current) ? current : layout.id));
+        setHoverState(null);
     }, [layout, nodeIndex]);
 
     const selectedNode = useMemo<ScopeLayoutNode | null>(() => {
@@ -195,6 +205,8 @@ const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt, filters }: Symbo
         }
         return nodeIndex.get(selectedId) ?? (layout as ScopeLayoutNode);
     }, [layout, nodeIndex, selectedId]);
+
+    const hoveredNode = hoverState?.nodeId ? nodeIndex.get(hoverState.nodeId) ?? null : null;
 
     const nodes = useMemo(() => {
         if (!layout) {
@@ -265,6 +277,98 @@ const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt, filters }: Symbo
         }
     };
 
+    const handleNodeMouseEnter = (event: MouseEvent<SVGRectElement>, node: ScopeLayoutNode): void => {
+        setHoverState({ nodeId: node.id, clientX: event.clientX, clientY: event.clientY });
+    };
+
+    const handleNodeMouseMove = (event: MouseEvent<SVGRectElement>, node: ScopeLayoutNode): void => {
+        setHoverState((current) => {
+            if (current && current.nodeId === node.id && current.clientX === event.clientX && current.clientY === event.clientY) {
+                return current;
+            }
+            return { nodeId: node.id, clientX: event.clientX, clientY: event.clientY };
+        });
+    };
+
+    const handleNodeMouseLeave = (): void => {
+        setHoverState(null);
+    };
+
+    const handleNodeFocus = (event: FocusEvent<SVGRectElement>, node: ScopeLayoutNode): void => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        setHoverState({ nodeId: node.id, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+    };
+
+    const handleNodeBlur = (): void => {
+        setHoverState(null);
+    };
+
+    const handleSvgMouseLeave = (): void => {
+        setHoverState(null);
+    };
+
+    const renderTooltipContent = (node: ScopeLayoutNode): ReactNode => {
+        const meta = node.data.meta;
+        if (!meta) {
+            return null;
+        }
+        const parent = node.parentId ? nodeIndex.get(node.parentId) ?? null : null;
+        const percentTotal = totalValue > 0 ? (node.value / totalValue) * 100 : 0;
+        const percentParent = parent && parent.value > 0 ? (node.value / parent.value) * 100 : 0;
+        const detailRows = buildDetailRows(node, symbolLookup).filter((row) => row.label !== 'Node ID');
+
+        return (
+            <div className="treemap-tooltip">
+                <div className="treemap-tooltip-header">
+                    <span className="treemap-tooltip-title">{node.data.label}</span>
+                    <span className="treemap-tooltip-kind">{formatNodeKindLabel(meta.nodeKind)}</span>
+                </div>
+                <div className="treemap-tooltip-metric">
+                    <span className="treemap-tooltip-metric-value">{formatValue(node.value)}</span>
+                    {percentTotal > 0 ? (
+                        <span className="treemap-tooltip-metric-note">{formatPercent(percentTotal)}% of target</span>
+                    ) : null}
+                </div>
+                {parent && percentParent > 0 ? (
+                    <div className="treemap-tooltip-metric treemap-tooltip-metric--secondary">
+                        <span className="treemap-tooltip-metric-note">
+                            {formatPercent(percentParent)}% of {parent.data.label}
+                        </span>
+                    </div>
+                ) : null}
+                {detailRows.length > 0 ? (
+                    <dl className="treemap-tooltip-details">
+                        {detailRows.slice(0, 4).map((row) => (
+                            <div key={row.label} className="treemap-tooltip-row">
+                                <dt>{row.label}</dt>
+                                <dd>{row.value}</dd>
+                            </div>
+                        ))}
+                    </dl>
+                ) : null}
+            </div>
+        );
+    };
+
+    const hoverOverlay = hoverState && hoveredNode && typeof document !== 'undefined'
+        ? createPortal(
+            <span
+                className="tooltip-overlay"
+                style={{
+                    left: (() => {
+                        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+                        const desired = hoverState.clientX + 16;
+                        return Math.min(Math.max(desired, 16), viewportWidth - 16);
+                    })(),
+                    top: hoverState.clientY + 20,
+                }}
+            >
+                <span className="tooltip-bubble">{renderTooltipContent(hoveredNode)}</span>
+            </span>,
+            document.body,
+        )
+        : null;
+
     return (
         <section className="summary-card treemap-card">
             <div className="summary-header">
@@ -294,6 +398,7 @@ const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt, filters }: Symbo
                                 viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
                                 role="presentation"
                                 onClick={handleBackgroundClick}
+                                onMouseLeave={handleSvgMouseLeave}
                             >
                                 <title>Symbol scope treemap</title>
                                 {nodes.map((node) => {
@@ -301,6 +406,7 @@ const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt, filters }: Symbo
                                         return null;
                                     }
                                     const isSelected = selectedNode?.id === node.id;
+                                    const isHovered = hoverState?.nodeId === node.id;
                                     const { fill, opacity } = getNodeColor(node);
                                     const labelX = node.x + NODE_TEXT_PADDING;
                                     const labelY = node.y + NODE_TEXT_PADDING + 12;
@@ -312,7 +418,7 @@ const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt, filters }: Symbo
                                     return (
                                         <g
                                             key={node.id}
-                                            className={`treemap-node${isSelected ? ' treemap-node--selected' : ''}${node.isLeaf ? ' treemap-node--leaf' : ''}`}
+                                            className={`treemap-node${isSelected ? ' treemap-node--selected' : ''}${node.isLeaf ? ' treemap-node--leaf' : ''}${isHovered ? ' treemap-node--hovered' : ''}`}
                                         >
                                             <rect
                                                 x={node.x}
@@ -330,6 +436,11 @@ const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt, filters }: Symbo
                                                 aria-pressed={isSelected}
                                                 onClick={(event) => handleNodeClick(event, node)}
                                                 onKeyDown={(event) => handleNodeKeyDown(event, node)}
+                                                onMouseEnter={(event) => handleNodeMouseEnter(event, node)}
+                                                onMouseMove={(event) => handleNodeMouseMove(event, node)}
+                                                onMouseLeave={handleNodeMouseLeave}
+                                                onFocus={(event) => handleNodeFocus(event, node)}
+                                                onBlur={handleNodeBlur}
                                             />
                                             {canShowLabel ? (
                                                 <text x={labelX} y={labelY} className="treemap-node-text">
@@ -348,6 +459,7 @@ const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt, filters }: Symbo
                                 })}
                             </svg>
                         </div>
+                        {hoverOverlay}
                     </div>
                     <div className="treemap-details">
                         {breadcrumbs.length > 1 ? (

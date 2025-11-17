@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type MouseEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent, type KeyboardEvent, type FocusEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { Analysis, Symbol as AnalyzerSymbol } from '@analyzer';
 import { SizeValue, useSizeFormat } from './SizeValue';
 import SymbolValue from './SymbolValue';
@@ -32,6 +33,12 @@ const VIEWBOX_HEIGHT = 560;
 const MIN_LABEL_WIDTH = 56;
 const MIN_LABEL_HEIGHT = 28;
 const NODE_TEXT_PADDING = 8;
+
+interface HoverState {
+    nodeId: string;
+    clientX: number;
+    clientY: number;
+}
 
 const formatNodeKindLabel = (kind: MemoryTreemapNodeKind): string => {
     switch (kind) {
@@ -235,13 +242,16 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTree
     }, [layout]);
 
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [hoverState, setHoverState] = useState<HoverState | null>(null);
 
     useEffect(() => {
         if (!layout) {
             setSelectedId(null);
+            setHoverState(null);
             return;
         }
         setSelectedId((current) => (current && nodeIndex.has(current) ? current : layout.id));
+        setHoverState(null);
     }, [layout, nodeIndex]);
 
     const selectedNode = useMemo<MemoryLayoutNode | null>(() => {
@@ -253,6 +263,8 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTree
         }
         return nodeIndex.get(selectedId) ?? (layout as MemoryLayoutNode);
     }, [layout, nodeIndex, selectedId]);
+
+    const hoveredNode = hoverState?.nodeId ? nodeIndex.get(hoverState.nodeId) ?? null : null;
 
     const nodes = useMemo(() => {
         if (!layout) {
@@ -324,6 +336,100 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTree
         }
     };
 
+    const handleNodeMouseEnter = (event: MouseEvent<SVGRectElement>, node: MemoryLayoutNode): void => {
+        setHoverState({ nodeId: node.id, clientX: event.clientX, clientY: event.clientY });
+    };
+
+    const handleNodeMouseMove = (event: MouseEvent<SVGRectElement>, node: MemoryLayoutNode): void => {
+        setHoverState((current) => {
+            if (current && current.nodeId === node.id && current.clientX === event.clientX && current.clientY === event.clientY) {
+                return current;
+            }
+            return { nodeId: node.id, clientX: event.clientX, clientY: event.clientY };
+        });
+    };
+
+    const handleNodeMouseLeave = (): void => {
+        setHoverState(null);
+    };
+
+    const handleNodeFocus = (event: FocusEvent<SVGRectElement>, node: MemoryLayoutNode): void => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        setHoverState({ nodeId: node.id, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+    };
+
+    const handleNodeBlur = (): void => {
+        setHoverState(null);
+    };
+
+    const handleSvgMouseLeave = (): void => {
+        setHoverState(null);
+    };
+
+    const renderTooltipContent = (node: MemoryLayoutNode): ReactNode => {
+        const meta = node.data.meta;
+        if (!meta) {
+            return null;
+        }
+        const parent = node.parentId ? nodeIndex.get(node.parentId) ?? null : null;
+        const percentTotal = totalValue > 0 ? (node.value / totalValue) * 100 : 0;
+        const percentParent = parent && parent.value > 0 ? (node.value / parent.value) * 100 : 0;
+        const detailRows = buildDetailRows(node, symbolLookup).filter(
+            (row) => row.label !== 'Node ID' && row.label !== 'Children',
+        );
+
+        return (
+            <div className="treemap-tooltip">
+                <div className="treemap-tooltip-header">
+                    <span className="treemap-tooltip-title">{node.data.label}</span>
+                    <span className="treemap-tooltip-kind">{formatNodeKindLabel(meta.nodeKind)}</span>
+                </div>
+                <div className="treemap-tooltip-metric">
+                    <span className="treemap-tooltip-metric-value">{formatValue(node.value)}</span>
+                    {percentTotal > 0 ? (
+                        <span className="treemap-tooltip-metric-note">{formatPercent(percentTotal)}% of target</span>
+                    ) : null}
+                </div>
+                {parent && percentParent > 0 ? (
+                    <div className="treemap-tooltip-metric treemap-tooltip-metric--secondary">
+                        <span className="treemap-tooltip-metric-note">
+                            {formatPercent(percentParent)}% of {parent.data.label}
+                        </span>
+                    </div>
+                ) : null}
+                {detailRows.length > 0 ? (
+                    <dl className="treemap-tooltip-details">
+                        {detailRows.slice(0, 4).map((row) => (
+                            <div key={row.label} className="treemap-tooltip-row">
+                                <dt>{row.label}</dt>
+                                <dd>{row.value}</dd>
+                            </div>
+                        ))}
+                    </dl>
+                ) : null}
+            </div>
+        );
+    };
+
+    const hoverOverlay = hoverState && hoveredNode && typeof document !== 'undefined'
+        ? createPortal(
+            <span
+                className="tooltip-overlay"
+                style={{
+                    left: (() => {
+                        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+                        const desired = hoverState.clientX + 16;
+                        return Math.min(Math.max(desired, 16), viewportWidth - 16);
+                    })(),
+                    top: hoverState.clientY + 20,
+                }}
+            >
+                <span className="tooltip-bubble">{renderTooltipContent(hoveredNode)}</span>
+            </span>,
+            document.body,
+        )
+        : null;
+
     return (
         <section className="summary-card treemap-card">
             <div className="summary-header">
@@ -353,6 +459,7 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTree
                                 viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
                                 role="presentation"
                                 onClick={handleBackgroundClick}
+                                onMouseLeave={handleSvgMouseLeave}
                             >
                                 <title>Symbol treemap</title>
                                 {nodes.map((node) => {
@@ -360,6 +467,7 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTree
                                         return null;
                                     }
                                     const isSelected = selectedNode?.id === node.id;
+                                    const isHovered = hoverState?.nodeId === node.id;
                                     const { fill, opacity } = getNodeColor(node);
                                     const labelX = node.x + NODE_TEXT_PADDING;
                                     const labelY = node.y + NODE_TEXT_PADDING + 12;
@@ -371,7 +479,7 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTree
                                     return (
                                         <g
                                             key={node.id}
-                                            className={`treemap-node${isSelected ? ' treemap-node--selected' : ''}${node.isLeaf ? ' treemap-node--leaf' : ''}`}
+                                            className={`treemap-node${isSelected ? ' treemap-node--selected' : ''}${node.isLeaf ? ' treemap-node--leaf' : ''}${isHovered ? ' treemap-node--hovered' : ''}`}
                                         >
                                             <rect
                                                 x={node.x}
@@ -389,6 +497,11 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTree
                                                 aria-pressed={isSelected}
                                                 onClick={(event) => handleNodeClick(event, node)}
                                                 onKeyDown={(event) => handleNodeKeyDown(event, node)}
+                                                onMouseEnter={(event) => handleNodeMouseEnter(event, node)}
+                                                onMouseMove={(event) => handleNodeMouseMove(event, node)}
+                                                onMouseLeave={handleNodeMouseLeave}
+                                                onFocus={(event) => handleNodeFocus(event, node)}
+                                                onBlur={handleNodeBlur}
                                             />
                                             {canShowLabel ? (
                                                 <text x={labelX} y={labelY} className="treemap-node-text">
@@ -407,6 +520,7 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTree
                                 })}
                             </svg>
                         </div>
+                        {hoverOverlay}
                     </div>
                     <div className="treemap-details">
                         {breadcrumbs.length > 1 ? (

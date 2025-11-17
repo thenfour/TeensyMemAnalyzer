@@ -6,15 +6,18 @@ import { hashColor } from '../utils/color';
 import {
     buildMemoryTreemap,
     computeTreemapLayout,
+    hasActiveFilters,
     type MemoryTreemapNodeKind,
     type MemoryTreemapNodeMeta,
     type TreemapLayoutNode,
     type TreemapLayoutTree,
+    type TreemapSymbolFilters,
 } from '../treemap';
 
 interface MemoryTreemapCardProps {
     analysis: Analysis | null;
     lastRunCompletedAt: Date | null;
+    filters?: TreemapSymbolFilters;
 }
 
 type MemoryLayoutNode = TreemapLayoutNode<MemoryTreemapNodeKind, MemoryTreemapNodeMeta>;
@@ -105,6 +108,9 @@ const buildDetailRows = (
             if (meta.windowName && meta.windowName !== node.data.label) {
                 rows.push({ label: 'Window name', value: meta.windowName });
             }
+            if (meta.hardwareBankId) {
+                rows.push({ label: 'Hardware bank', value: meta.hardwareBankName ?? meta.hardwareBankId });
+            }
             break;
         case 'block':
             rows.push({ label: 'Block ID', value: meta.blockId });
@@ -112,7 +118,10 @@ const buildDetailRows = (
                 rows.push({ label: 'Block name', value: meta.blockName });
             }
             if (meta.windowId) {
-                rows.push({ label: 'Window', value: meta.windowId });
+                rows.push({ label: 'Window', value: meta.windowName ?? meta.windowId });
+            }
+            if (meta.hardwareBankId) {
+                rows.push({ label: 'Hardware bank', value: meta.hardwareBankName ?? meta.hardwareBankId });
             }
             break;
         case 'section':
@@ -121,10 +130,13 @@ const buildDetailRows = (
                 rows.push({ label: 'Section name', value: meta.sectionName });
             }
             if (meta.blockId) {
-                rows.push({ label: 'Block', value: meta.blockId });
+                rows.push({ label: 'Block', value: meta.blockName ?? meta.blockId });
             }
             if (meta.windowId) {
-                rows.push({ label: 'Window', value: meta.windowId });
+                rows.push({ label: 'Window', value: meta.windowName ?? meta.windowId });
+            }
+            if (meta.hardwareBankId) {
+                rows.push({ label: 'Hardware bank', value: meta.hardwareBankName ?? meta.hardwareBankId });
             }
             break;
         case 'symbol': {
@@ -135,13 +147,16 @@ const buildDetailRows = (
             });
             rows.push({ label: 'Kind', value: meta.symbolKind });
             if (meta.sectionId) {
-                rows.push({ label: 'Section', value: meta.sectionId });
+                rows.push({ label: 'Section', value: meta.sectionName ?? meta.sectionId });
             }
             if (meta.blockId) {
-                rows.push({ label: 'Block', value: meta.blockId });
+                rows.push({ label: 'Block', value: meta.blockName ?? meta.blockId });
             }
             if (meta.windowId) {
-                rows.push({ label: 'Window', value: meta.windowId });
+                rows.push({ label: 'Window', value: meta.windowName ?? meta.windowId });
+            }
+            if (meta.hardwareBankId) {
+                rows.push({ label: 'Hardware bank', value: meta.hardwareBankName ?? meta.hardwareBankId });
             }
             if (meta.mangledName) {
                 rows.push({ label: 'Mangled name', value: meta.mangledName });
@@ -178,10 +193,10 @@ const formatPercent = (value: number): string => {
     return value.toFixed(1);
 };
 
-const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardProps): JSX.Element => {
+const MemoryTreemapCard = ({ analysis, lastRunCompletedAt, filters }: MemoryTreemapCardProps): JSX.Element => {
     const { formatValue } = useSizeFormat();
 
-    const treemap = useMemo(() => buildMemoryTreemap(analysis), [analysis]);
+    const treemap = useMemo(() => buildMemoryTreemap(analysis, filters), [analysis, filters]);
 
     const layout = useMemo<TreemapLayoutTree<MemoryTreemapNodeKind, MemoryTreemapNodeMeta> | null>(() => {
         if (!treemap) {
@@ -277,9 +292,13 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
     const detailRows = selectedNode ? buildDetailRows(selectedNode, symbolLookup) : [];
     const selectedMeta = selectedNode?.data.meta ?? null;
     const selectedKindLabel = formatNodeKindLabel(selectedMeta?.nodeKind ?? 'root');
+    const hasFiltersApplied = hasActiveFilters(filters);
+    const hasNodes = nodes.length > 0;
 
     const emptyMessage = analysis
-        ? 'No symbol data with positive size was found in this analysis.'
+        ? hasFiltersApplied
+            ? 'No symbols match the current filters.'
+            : 'No symbol data with positive size was found in this analysis.'
         : 'Load an analysis to explore the symbol treemap.';
 
     const handleBackgroundClick = (): void => {
@@ -323,7 +342,7 @@ const MemoryTreemapCard = ({ analysis, lastRunCompletedAt }: MemoryTreemapCardPr
                 the total bytes attributed to each group.
             </p>
 
-            {!layout ? (
+            {!layout || !hasNodes ? (
                 <p className="summary-placeholder">{emptyMessage}</p>
             ) : (
                 <div className="treemap-content">

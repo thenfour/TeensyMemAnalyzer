@@ -18,10 +18,12 @@ import RegionUsageCard from './components/RegionUsageCard';
 import MemoryMapCard from './components/MemoryMapCard';
 import MemoryTreemapCard from './components/TreemapCard';
 import SymbolScopeTreemapCard from './components/SymbolScopeTreemapCard';
+import TreemapFilters from './components/TreemapFilters';
 import RuntimeBankCard from './components/RuntimeBankCard';
 import TemplateGroupsCard from './components/TemplateGroupsCard';
 import { useRegionUsage } from './hooks/useRegionUsage';
 import { AddressResolutionProvider } from './context/AddressResolverContext';
+import type { TreemapSymbolFilters } from './treemap';
 
 type LatestAnalysisBundle = {
     analysis: Analysis;
@@ -104,6 +106,7 @@ const App = (): JSX.Element => {
     const [isTriggeringRun, setIsTriggeringRun] = useState(false);
     const [runError, setRunError] = useState<string | null>(null);
     const [latestBundle, setLatestBundle] = useState<LatestAnalysisBundle | null>(null);
+    const [treemapFilters, setTreemapFilters] = useState<TreemapSymbolFilters>({});
 
     const latestAnalysis = latestBundle?.analysis ?? null;
     const latestSummaries = latestBundle?.summaries ?? null;
@@ -711,8 +714,23 @@ const App = (): JSX.Element => {
                         summaries={latestSummaries}
                         lastRunCompletedAt={lastRunCompletedAt}
                     />
-                    <MemoryTreemapCard analysis={latestAnalysis} lastRunCompletedAt={lastRunCompletedAt} />
-                    <SymbolScopeTreemapCard analysis={latestAnalysis} lastRunCompletedAt={lastRunCompletedAt} />
+                    {latestAnalysis ? (
+                        <TreemapFilters
+                            analysis={latestAnalysis}
+                            filters={treemapFilters}
+                            onFiltersChange={setTreemapFilters}
+                        />
+                    ) : null}
+                    <MemoryTreemapCard
+                        analysis={latestAnalysis}
+                        lastRunCompletedAt={lastRunCompletedAt}
+                        filters={treemapFilters}
+                    />
+                    <SymbolScopeTreemapCard
+                        analysis={latestAnalysis}
+                        lastRunCompletedAt={lastRunCompletedAt}
+                        filters={treemapFilters}
+                    />
                     <section className="placeholder-grid" />
                 </main>
             </div>

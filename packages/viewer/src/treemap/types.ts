@@ -8,3 +8,10 @@ export interface TreemapNode<K extends string = string, M = unknown> {
 }
 
 export type TreemapTree<K extends string = string, M = unknown> = TreemapNode<K, M>;
+
+export interface TreemapSymbolFilters {
+    hardwareBanks?: ReadonlySet<string>;
+    windows?: ReadonlySet<string>;
+    logicalBlocks?: ReadonlySet<string>;
+    sections?: ReadonlySet<string>;
+}

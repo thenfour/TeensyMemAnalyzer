@@ -1,11 +1,28 @@
 import type {
     AddressWindow,
     Analysis,
+    HardwareBank,
     LogicalBlock,
     Section,
     Symbol,
 } from '@analyzer';
-import type { TreemapNode, TreemapTree } from './types';
+import type { TreemapNode, TreemapTree, TreemapSymbolFilters } from './types';
+import {
+    coerceBlockId,
+    coerceSectionId,
+    coerceWindowId,
+    isUnknownBlockId,
+    isUnknownHardwareBankId,
+    isUnknownSectionId,
+    isUnknownWindowId,
+    resolveBlockLabel,
+    resolveHardwareBankLabel,
+    resolveSectionLabel,
+    resolveSymbolLabel,
+    resolveWindowLabel,
+    symbolPassesFilters,
+    UNKNOWN_HARDWARE_BANK_ID,
+} from './filtering';
 
 export type MemoryTreemapNodeKind = 'root' | 'window' | 'block' | 'section' | 'symbol' | 'unused';
 
@@ -21,6 +38,8 @@ export interface MemoryTreemapWindowMeta {
     windowName: string;
     addressWindow?: AddressWindow;
     symbolCount: number;
+    hardwareBankId?: string;
+    hardwareBankName?: string;
 }
 
 export interface MemoryTreemapBlockMeta {
@@ -28,8 +47,11 @@ export interface MemoryTreemapBlockMeta {
     blockId: string;
     blockName: string;
     windowId: string;
+    windowName?: string;
     logicalBlock?: LogicalBlock;
     symbolCount: number;
+    hardwareBankId?: string;
+    hardwareBankName?: string;
 }
 
 export interface MemoryTreemapSectionMeta {
@@ -37,9 +59,13 @@ export interface MemoryTreemapSectionMeta {
     sectionId: string;
     sectionName: string;
     windowId?: string;
+    windowName?: string;
     blockId?: string;
+    blockName?: string;
     section?: Section;
     symbolCount: number;
+    hardwareBankId?: string;
+    hardwareBankName?: string;
 }
 
 export interface MemoryTreemapSymbolMeta {
@@ -49,9 +75,14 @@ export interface MemoryTreemapSymbolMeta {
     symbolSize: number;
     symbolKind: Symbol['kind'];
     windowId?: string;
+    windowName?: string;
     blockId?: string;
+    blockName?: string;
     sectionId?: string;
+    sectionName?: string;
     mangledName?: string;
+    hardwareBankId?: string;
+    hardwareBankName?: string;
 }
 
 export interface MemoryTreemapUnusedMeta {
@@ -84,18 +115,7 @@ interface AccumulatorNode {
     children: Map<string, AccumulatorNode>;
 }
 
-const UNKNOWN_WINDOW_ID = '__unknown_window__';
-const UNKNOWN_BLOCK_ID = '__unknown_block__';
-const UNKNOWN_SECTION_ID = '__unknown_section__';
-
 const NUMBER_FORMATTER = new Intl.NumberFormat();
-
-const formatSymbolLabel = (symbol: Symbol): string => {
-    if (symbol.name) {
-        return symbol.name;
-    }
-    return `Symbol ${symbol.id}`;
-};
 
 const normalizeSize = (value: number | undefined): number => {
     if (!Number.isFinite(value)) {
@@ -123,10 +143,6 @@ const createAccumulator = (
 const incrementNode = (node: AccumulatorNode, size: number): void => {
     node.value += size;
     node.symbolCount += 1;
-};
-
-const addNodeValue = (node: AccumulatorNode, size: number): void => {
-    node.value += size;
 };
 
 const ensureChild = (
@@ -174,7 +190,10 @@ const describeUnknown = (label: string, count: number): string => {
     return `${label} (${NUMBER_FORMATTER.format(count)})`;
 };
 
-export const buildMemoryTreemap = (analysis: Analysis | null | undefined): MemoryTreemapTree | null => {
+export const buildMemoryTreemap = (
+    analysis: Analysis | null | undefined,
+    filters?: TreemapSymbolFilters,
+): MemoryTreemapTree | null => {
     if (!analysis) {
         return null;
     }
@@ -192,6 +211,17 @@ export const buildMemoryTreemap = (analysis: Analysis | null | undefined): Memor
     const sectionById = new Map<string, Section>();
     analysis.sections.forEach((section) => {
         sectionById.set(section.id, section);
+    });
+
+    const hardwareBankById = new Map<string, HardwareBank>();
+    const hardwareBankIdByWindowId = new Map<string, string>();
+    analysis.config.hardwareBanks.forEach((bank) => {
+        hardwareBankById.set(bank.id, bank);
+        bank.windowIds.forEach((windowId) => {
+            if (!hardwareBankIdByWindowId.has(windowId)) {
+                hardwareBankIdByWindowId.set(windowId, bank.id);
+            }
+        });
     });
 
     const targetName = analysis.target?.name ?? 'Unknown target';
@@ -215,12 +245,27 @@ export const buildMemoryTreemap = (analysis: Analysis | null | undefined): Memor
         }
 
         const primaryLocation = symbol.primaryLocation ?? symbol.locations?.[0] ?? null;
-        const windowId = primaryLocation?.windowId ?? symbol.windowId ?? UNKNOWN_WINDOW_ID;
-        const blockId = primaryLocation?.blockId ?? symbol.blockId ?? UNKNOWN_BLOCK_ID;
-        const sectionId = symbol.sectionId ?? UNKNOWN_SECTION_ID;
+        const rawWindowId = primaryLocation?.windowId ?? symbol.windowId;
+        const windowId = coerceWindowId(rawWindowId);
+        const blockId = coerceBlockId(primaryLocation?.blockId ?? symbol.blockId);
+        const sectionId = coerceSectionId(symbol.sectionId);
+
+        const hardwareBankId = hardwareBankIdByWindowId.get(windowId) ?? UNKNOWN_HARDWARE_BANK_ID;
+        if (!symbolPassesFilters(filters, {
+            hardwareBankId,
+            windowId,
+            blockId,
+            sectionId,
+        })) {
+            return;
+        }
 
         const windowConfig = windowConfigById.get(windowId);
-        const windowLabel = windowConfig?.name ?? (windowId === UNKNOWN_WINDOW_ID ? 'Unassigned window' : windowId);
+        const windowLabel = resolveWindowLabel(windowId, windowConfig?.name);
+        const hardwareBank = isUnknownHardwareBankId(hardwareBankId) ? undefined : hardwareBankById.get(hardwareBankId);
+        const hardwareBankLabel = !isUnknownHardwareBankId(hardwareBankId)
+            ? resolveHardwareBankLabel(hardwareBankId, hardwareBank?.name)
+            : undefined;
 
         const windowNode = ensureChild(root, `window:${windowId}`, () => createAccumulator(
             `window:${windowId}`,
@@ -232,14 +277,15 @@ export const buildMemoryTreemap = (analysis: Analysis | null | undefined): Memor
                 windowName: windowLabel,
                 addressWindow: windowConfig,
                 symbolCount: 0,
+                hardwareBankId: isUnknownHardwareBankId(hardwareBankId) ? undefined : hardwareBankId,
+                hardwareBankName: hardwareBankLabel,
             },
         ));
         incrementNode(root, symbolSize);
         incrementNode(windowNode, symbolSize);
 
-        const blockConfig = blockId !== UNKNOWN_BLOCK_ID ? logicalBlockById.get(blockId) : undefined;
-        const blockLabel = blockConfig?.name
-            ?? (blockId === UNKNOWN_BLOCK_ID ? 'Unassigned block' : blockId);
+        const blockConfig = !isUnknownBlockId(blockId) ? logicalBlockById.get(blockId) : undefined;
+        const blockLabel = resolveBlockLabel(blockId, blockConfig?.name);
 
         const blockNode = ensureChild(windowNode, `block:${blockId}`, () => createAccumulator(
             `block:${blockId}`,
@@ -250,15 +296,17 @@ export const buildMemoryTreemap = (analysis: Analysis | null | undefined): Memor
                 blockId,
                 blockName: blockLabel,
                 windowId,
+                windowName: windowLabel,
                 logicalBlock: blockConfig,
                 symbolCount: 0,
+                hardwareBankId: isUnknownHardwareBankId(hardwareBankId) ? undefined : hardwareBankId,
+                hardwareBankName: hardwareBankLabel,
             },
         ));
         incrementNode(blockNode, symbolSize);
 
-        const sectionConfig = sectionId !== UNKNOWN_SECTION_ID ? sectionById.get(sectionId) : undefined;
-        const sectionLabel = sectionConfig?.name
-            ?? (sectionId === UNKNOWN_SECTION_ID ? 'Unassigned section' : sectionId);
+        const sectionConfig = !isUnknownSectionId(sectionId) ? sectionById.get(sectionId) : undefined;
+        const sectionLabel = resolveSectionLabel(sectionId, sectionConfig?.name);
 
         const sectionNode = ensureChild(blockNode, `section:${sectionId}`, () => createAccumulator(
             `section:${sectionId}`,
@@ -268,16 +316,20 @@ export const buildMemoryTreemap = (analysis: Analysis | null | undefined): Memor
                 nodeKind: 'section',
                 sectionId,
                 sectionName: sectionLabel,
-                blockId: blockId !== UNKNOWN_BLOCK_ID ? blockId : undefined,
-                windowId: windowId !== UNKNOWN_WINDOW_ID ? windowId : undefined,
+                blockId: isUnknownBlockId(blockId) ? undefined : blockId,
+                blockName: isUnknownBlockId(blockId) ? undefined : blockLabel,
+                windowId: isUnknownWindowId(windowId) ? undefined : windowId,
+                windowName: isUnknownWindowId(windowId) ? undefined : windowLabel,
                 section: sectionConfig,
                 symbolCount: 0,
+                hardwareBankId: isUnknownHardwareBankId(hardwareBankId) ? undefined : hardwareBankId,
+                hardwareBankName: hardwareBankLabel,
             },
         ));
         incrementNode(sectionNode, symbolSize);
 
         const symbolNode = ensureChild(sectionNode, `symbol:${symbol.id}`, () => {
-            const label = formatSymbolLabel(symbol);
+            const label = resolveSymbolLabel(symbol.name, symbol.id);
             return createAccumulator(
                 `symbol:${symbol.id}`,
                 label,
@@ -288,9 +340,14 @@ export const buildMemoryTreemap = (analysis: Analysis | null | undefined): Memor
                     symbolName: label,
                     symbolSize,
                     symbolKind: symbol.kind,
-                    windowId: windowId !== UNKNOWN_WINDOW_ID ? windowId : undefined,
-                    blockId: blockId !== UNKNOWN_BLOCK_ID ? blockId : undefined,
-                    sectionId: sectionId !== UNKNOWN_SECTION_ID ? sectionId : undefined,
+                    windowId: isUnknownWindowId(windowId) ? undefined : windowId,
+                    windowName: isUnknownWindowId(windowId) ? undefined : windowLabel,
+                    blockId: isUnknownBlockId(blockId) ? undefined : blockId,
+                    blockName: isUnknownBlockId(blockId) ? undefined : blockLabel,
+                    sectionId: isUnknownSectionId(sectionId) ? undefined : sectionId,
+                    sectionName: isUnknownSectionId(sectionId) ? undefined : sectionLabel,
+                    hardwareBankId: isUnknownHardwareBankId(hardwareBankId) ? undefined : hardwareBankId,
+                    hardwareBankName: hardwareBankLabel,
                     mangledName: symbol.nameMangled !== symbol.name ? symbol.nameMangled : undefined,
                 },
             );

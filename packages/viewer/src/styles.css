@@ -685,6 +685,85 @@ rect {
     margin-bottom: 0;
 }
 
+.treemap-filters-card .summary-header {
+    align-items: center;
+}
+
+.treemap-filter-reset {
+    border: 1px solid #1d4ed8;
+    background-color: transparent;
+    color: #1d4ed8;
+    border-radius: 6px;
+    padding: 0.35rem 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.treemap-filter-reset:hover,
+.treemap-filter-reset:focus-visible {
+    background-color: rgba(29, 78, 216, 0.08);
+    color: #1d4ed8;
+}
+
+.treemap-filter-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.treemap-filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.treemap-filter-label {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.treemap-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.treemap-filter-chip {
+    border: 1px solid #cbd5e1;
+    background-color: #f8fafc;
+    color: #1f2937;
+    border-radius: 999px;
+    padding: 0.35rem 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.treemap-filter-chip:hover,
+.treemap-filter-chip:focus-visible {
+    border-color: #2563eb;
+    background-color: #e2e8f0;
+    color: #1d4ed8;
+}
+
+.treemap-filter-chip--active {
+    background-color: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #f8fafc;
+    box-shadow: 0 1px 3px rgba(37, 99, 235, 0.35);
+}
+
+.treemap-filter-summary {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #334155;
+}
+
+.treemap-filter-summary--muted {
+    color: #64748b;
+}
+
 .treemap-card .summary-meta {
     gap: 0.75rem;
     flex-wrap: wrap;

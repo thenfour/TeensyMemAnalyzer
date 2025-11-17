@@ -6,15 +6,18 @@ import { hashColor } from '../utils/color';
 import {
     buildScopeTreemap,
     computeTreemapLayout,
+    hasActiveFilters,
     type ScopeTreemapNodeKind,
     type ScopeTreemapNodeMeta,
     type TreemapLayoutNode,
     type TreemapLayoutTree,
+    type TreemapSymbolFilters,
 } from '../treemap';
 
 interface SymbolScopeTreemapCardProps {
     analysis: Analysis | null;
     lastRunCompletedAt: Date | null;
+    filters?: TreemapSymbolFilters;
 }
 
 type ScopeLayoutNode = TreemapLayoutNode<ScopeTreemapNodeKind, ScopeTreemapNodeMeta>;
@@ -94,6 +97,18 @@ const buildDetailRows = (
             if (meta.fullScope.length > 0) {
                 rows.push({ label: 'Scope', value: meta.fullScope.join('::') });
             }
+            if (meta.windowId) {
+                rows.push({ label: 'Window', value: meta.windowName ?? meta.windowId });
+            }
+            if (meta.blockId) {
+                rows.push({ label: 'Block', value: meta.blockName ?? meta.blockId });
+            }
+            if (meta.sectionId) {
+                rows.push({ label: 'Section', value: meta.sectionName ?? meta.sectionId });
+            }
+            if (meta.hardwareBankId) {
+                rows.push({ label: 'Hardware bank', value: meta.hardwareBankName ?? meta.hardwareBankId });
+            }
             rows.push({ label: 'Declared size', value: <SizeValue value={meta.symbolSize} /> });
             if (meta.mangledName) {
                 rows.push({ label: 'Mangled name', value: meta.mangledName });
@@ -120,10 +135,10 @@ const formatPercent = (value: number): string => {
     return value.toFixed(1);
 };
 
-const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt }: SymbolScopeTreemapCardProps): JSX.Element => {
+const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt, filters }: SymbolScopeTreemapCardProps): JSX.Element => {
     const { formatValue } = useSizeFormat();
 
-    const treemap = useMemo(() => buildScopeTreemap(analysis), [analysis]);
+    const treemap = useMemo(() => buildScopeTreemap(analysis, filters), [analysis, filters]);
 
     const layout = useMemo<TreemapLayoutTree<ScopeTreemapNodeKind, ScopeTreemapNodeMeta> | null>(() => {
         if (!treemap) {
@@ -218,9 +233,13 @@ const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt }: SymbolScopeTre
     const percentLabel = formatPercent(percentOfTotal);
     const detailRows = selectedNode ? buildDetailRows(selectedNode, symbolLookup) : [];
     const selectedKindLabel = formatNodeKindLabel(selectedNode?.data.meta?.nodeKind ?? 'root');
+    const hasFiltersApplied = hasActiveFilters(filters);
+    const hasNodes = nodes.length > 0;
 
     const emptyMessage = analysis
-        ? 'No symbols with size information are available to build the scope treemap.'
+        ? hasFiltersApplied
+            ? 'No symbols match the current filters.'
+            : 'No symbols with size information are available to build the scope treemap.'
         : 'Load an analysis to explore symbol scopes.';
 
     const handleBackgroundClick = (): void => {
@@ -264,7 +283,7 @@ const SymbolScopeTreemapCard = ({ analysis, lastRunCompletedAt }: SymbolScopeTre
                 contributions within your code structure.
             </p>
 
-            {!layout ? (
+            {!layout || !hasNodes ? (
                 <p className="summary-placeholder">{emptyMessage}</p>
             ) : (
                 <div className="treemap-content">

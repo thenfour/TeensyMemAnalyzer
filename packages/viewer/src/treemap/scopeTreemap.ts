@@ -125,16 +125,90 @@ const finalizeNode = (node: AccumulatorNode): ScopeTreemapNode => {
     } satisfies ScopeTreemapNode;
 };
 
+const splitQualifiedName = (input: string): string[] => {
+    const segments: string[] = [];
+    let current = '';
+    let angleDepth = 0;
+    let parenDepth = 0;
+    let braceDepth = 0;
+    let bracketDepth = 0;
+
+    const flush = (): void => {
+        const trimmed = current.trim();
+        if (trimmed.length > 0) {
+            segments.push(trimmed);
+        }
+        current = '';
+    };
+
+    for (let index = 0; index < input.length; index += 1) {
+        const char = input[index];
+        const next = index + 1 < input.length ? input[index + 1] : '';
+
+        const isScopeSeparator = char === ':' && next === ':'
+            && angleDepth === 0
+            && parenDepth === 0
+            && braceDepth === 0
+            && bracketDepth === 0;
+
+        if (isScopeSeparator) {
+            flush();
+            index += 1; // Skip the second ':'
+            continue;
+        }
+
+        current += char;
+
+        switch (char) {
+            case '<':
+                angleDepth += 1;
+                break;
+            case '>':
+                if (angleDepth > 0) {
+                    angleDepth -= 1;
+                }
+                break;
+            case '(': {
+                parenDepth += 1;
+                break;
+            }
+            case ')':
+                if (parenDepth > 0) {
+                    parenDepth -= 1;
+                }
+                break;
+            case '{':
+                braceDepth += 1;
+                break;
+            case '}':
+                if (braceDepth > 0) {
+                    braceDepth -= 1;
+                }
+                break;
+            case '[':
+                bracketDepth += 1;
+                break;
+            case ']':
+                if (bracketDepth > 0) {
+                    bracketDepth -= 1;
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    flush();
+    return segments;
+};
+
 const normalizeScopeSegments = (symbol: Symbol): string[] => {
     if (symbol.logicalPath && symbol.logicalPath.length > 0) {
         return symbol.logicalPath.filter((segment) => segment.length > 0);
     }
 
     const name = symbol.name ?? symbol.nameMangled ?? symbol.id;
-    return name
-        .split('::')
-        .map((segment) => segment.trim())
-        .filter((segment) => segment.length > 0);
+    return splitQualifiedName(name);
 };
 
 const SYMBOL_SIZE_GUARD = (size: number | undefined): number => {
